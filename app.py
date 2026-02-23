@@ -1,4 +1,4 @@
-import os, uuid, threading, tempfile
+import os, uuid, threading, tempfile, subprocess, shutil
 from flask import (Flask, render_template, request, redirect, url_for,
                    session, flash, jsonify, send_file)
 from auth import login_required, check_credentials
@@ -89,11 +89,53 @@ def analyze():
     return render_template("loading.html", job_id=job_id, filename=original_filename)
 
 
+def _convert_to_docx(doc_path: str) -> str:
+    """
+    Convert a .doc file to .docx using LibreOffice headless.
+    Returns the path of the new .docx file (caller must delete it).
+    Raises RuntimeError if conversion fails.
+    """
+    out_dir = tempfile.mkdtemp()
+    try:
+        result = subprocess.run(
+            ["libreoffice", "--headless", "--convert-to", "docx",
+             "--outdir", out_dir, doc_path],
+            capture_output=True, text=True, timeout=60
+        )
+        if result.returncode != 0:
+            raise RuntimeError(f"LibreOffice conversion failed: {result.stderr}")
+        # LibreOffice names the output file based on the input filename
+        base = os.path.splitext(os.path.basename(doc_path))[0]
+        converted = os.path.join(out_dir, base + ".docx")
+        if not os.path.exists(converted):
+            # Try any .docx in the output dir
+            files = [f for f in os.listdir(out_dir) if f.endswith(".docx")]
+            if not files:
+                raise RuntimeError("LibreOffice produced no .docx output.")
+            converted = os.path.join(out_dir, files[0])
+        # Move to a temp file so we can clean up out_dir
+        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
+        tmp.close()
+        shutil.move(converted, tmp.name)
+        return tmp.name
+    finally:
+        shutil.rmtree(out_dir, ignore_errors=True)
+
+
 def _run_analysis(job_id, input_path, original_filename):
     tmp_out = None
+    converted_path = None  # Track converted .doc→.docx so we can delete it
     try:
+        # Convert .doc → .docx if needed
+        if input_path.lower().endswith(".doc"):
+            _update_job(job_id, progress="Converting .doc to .docx…")
+            converted_path = _convert_to_docx(input_path)
+            processing_path = converted_path
+        else:
+            processing_path = input_path
+
         _update_job(job_id, progress="Extracting lease text…")
-        lease_text = extract_text(input_path)
+        lease_text = extract_text(processing_path)
 
         if len(lease_text.strip()) < 100:
             raise ValueError("Could not extract readable text from the document. Is it a valid .docx file?")
@@ -108,7 +150,7 @@ def _run_analysis(job_id, input_path, original_filename):
         tmp_out = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
         tmp_out.close()
 
-        redline_summary = apply_redlines(input_path, result.get("redlines", []), tmp_out.name)
+        redline_summary = apply_redlines(processing_path, result.get("redlines", []), tmp_out.name)
         result["redline_summary"] = redline_summary
 
         with JOBS_LOCK:
@@ -128,10 +170,12 @@ def _run_analysis(job_id, input_path, original_filename):
                 "error": str(e),
             })
     finally:
-        try:
-            os.unlink(input_path)
-        except Exception:
-            pass
+        for path in [input_path, converted_path]:
+            if path:
+                try:
+                    os.unlink(path)
+                except Exception:
+                    pass
 
 
 def _update_job(job_id, **kwargs):
