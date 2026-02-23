@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>VIP Lease Review</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet"/>
+<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet"/>
+<style>
+  body { background: #f8faff; font-family: 'Segoe UI', system-ui, sans-serif; min-height: 100vh; }
+  .navbar { background: linear-gradient(135deg, #0f172a, #1e3a5f); box-shadow: 0 2px 16px rgba(0,0,0,.2); }
+  .brand-icon { width: 36px; height: 36px; background: linear-gradient(135deg, #1e40af, #3b82f6); border-radius: 8px; display: inline-flex; align-items: center; justify-content: center; margin-right: .5rem; }
+  .hero { text-align: center; padding: 4rem 1rem 2.5rem; }
+  .hero h1 { font-size: 2.4rem; font-weight: 800; color: #0f172a; line-height: 1.2; }
+  .hero h1 span { color: #3b82f6; }
+  .hero p { color: #64748b; font-size: 1.05rem; margin-top: .75rem; }
+  .upload-card { max-width: 680px; margin: 0 auto 3rem; }
+  .upload-zone { border: 2.5px dashed #93c5fd; border-radius: 16px; padding: 3.5rem 2rem; text-align: center; cursor: pointer; transition: all .2s; background: #fff; }
+  .upload-zone:hover, .upload-zone.drag { background: #eff6ff; border-color: #3b82f6; }
+  .upload-icon { width: 72px; height: 72px; background: #eff6ff; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; margin-bottom: 1.25rem; }
+  .upload-icon i { font-size: 1.8rem; color: #3b82f6; }
+  .upload-link { color: #3b82f6; font-weight: 600; }
+  .feature-cards { max-width: 900px; margin: 0 auto 4rem; }
+  .fcard { background: #fff; border-radius: 14px; padding: 1.75rem; border: 1px solid #e2e8f0; box-shadow: 0 2px 8px rgba(0,0,0,.04); }
+  .fcard-accent { height: 4px; border-radius: 2px; background: linear-gradient(135deg, #1e40af, #3b82f6); margin-bottom: 1rem; }
+  .fcard h6 { font-weight: 700; color: #0f172a; margin-bottom: .5rem; }
+  .fcard p { font-size: .87rem; color: #64748b; margin: 0; }
+  .btn-analyze { background: linear-gradient(135deg, #1e40af, #3b82f6); border: none; padding: .75rem 2.5rem; font-size: 1.05rem; font-weight: 700; border-radius: 10px; color: #fff; }
+  .btn-analyze:hover { background: linear-gradient(135deg, #1d4ed8, #60a5fa); color: #fff; }
+  .file-badge { background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: .5rem 1rem; font-size: .88rem; color: #1e40af; display: inline-flex; align-items: center; gap: .5rem; margin-top: .75rem; }
+</style>
+</head>
+<body>
+
+<nav class="navbar navbar-dark px-4 py-3 d-flex justify-content-between align-items-center">
+  <div class="d-flex align-items-center">
+    <div class="brand-icon">
+      <svg width="20" height="20" fill="white" viewBox="0 0 24 24"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 000 4h6a2 2 0 000-4M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/></svg>
+    </div>
+    <span class="navbar-brand fw-bold mb-0">VIP Lease Review</span>
+  </div>
+  <div class="d-flex align-items-center gap-3">
+    <span class="text-white-50 small">{{ session.username }}</span>
+    <a href="/logout" class="btn btn-sm btn-outline-light">Sign out</a>
+  </div>
+</nav>
+
+<div class="hero">
+  <h1>Trust but <span>verify.</span></h1>
+  <p>Upload a lease and get a full review against VIP Medical Group standards — plus a redlined Word doc ready for your attorney.</p>
+</div>
+
+<div class="container">
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% for cat, msg in messages %}
+      <div class="alert alert-{{ 'danger' if cat == 'danger' else 'warning' }} text-center mb-3">{{ msg }}</div>
+    {% endfor %}
+  {% endwith %}
+
+  <div class="upload-card">
+    <form method="post" action="/analyze" enctype="multipart/form-data" id="uploadForm">
+      <div class="upload-zone" id="uploadZone" onclick="document.getElementById('leaseFile').click()">
+        <div class="upload-icon"><i class="fa fa-file-word"></i></div>
+        <div style="font-size:1.05rem;color:#0f172a">
+          <span class="upload-link">Click to upload</span> or drag and drop
+        </div>
+        <div class="text-muted small mt-2">Supported format: .docx (Word document)</div>
+        <div id="fileBadge" style="display:none" class="mt-3">
+          <span class="file-badge"><i class="fa fa-file-word"></i><span id="fileName"></span></span>
+        </div>
+        <input type="file" name="lease" id="leaseFile" accept=".docx,.doc" style="display:none" onchange="handleFile(this)"/>
+      </div>
+      <div class="text-center mt-4">
+        <button type="submit" class="btn btn-analyze" id="analyzeBtn" disabled>
+          <i class="fa fa-search me-2"></i>Analyze Lease
+        </button>
+        <div class="text-muted small mt-2">Analysis takes 30–60 seconds</div>
+      </div>
+    </form>
+  </div>
+
+  <div class="feature-cards">
+    <div class="row g-4">
+      <div class="col-md-4">
+        <div class="fcard">
+          <div class="fcard-accent"></div>
+          <h6>60+ Point Checklist</h6>
+          <p>Every clause reviewed against VIP Medical Group's master standards — from TI to HVAC to signage rights.</p>
+        </div>
+      </div>
+      <div class="col-md-4">
+        <div class="fcard">
+          <div class="fcard-accent"></div>
+          <h6>Real Word Redlines</h6>
+          <p>Download a .docx with actual tracked changes — insertions and deletions your attorney can accept or reject in Word.</p>
+        </div>
+      </div>
+      <div class="col-md-4">
+        <div class="fcard">
+          <div class="fcard-accent"></div>
+          <h6>Priority Flagging</h6>
+          <p>Issues sorted by High, Medium, and Low priority. Proposed language included for every red flag identified.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+function handleFile(input) {
+  const file = input.files[0];
+  if (!file) return;
+  document.getElementById("fileName").textContent = file.name;
+  document.getElementById("fileBadge").style.display = "";
+  document.getElementById("analyzeBtn").disabled = false;
+}
+
+const zone = document.getElementById("uploadZone");
+zone.addEventListener("dragover", e => { e.preventDefault(); zone.classList.add("drag"); });
+zone.addEventListener("dragleave", () => zone.classList.remove("drag"));
+zone.addEventListener("drop", e => {
+  e.preventDefault(); zone.classList.remove("drag");
+  const file = e.dataTransfer.files[0];
+  if (file) {
+    document.getElementById("leaseFile").files = e.dataTransfer.files;
+    handleFile(document.getElementById("leaseFile"));
+  }
+});
+</script>
+</body>
+</html>

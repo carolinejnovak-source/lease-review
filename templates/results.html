@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Lease Review — {{ property_name }}</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet"/>
+<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet"/>
+<style>
+  body { background: #f8faff; font-family: 'Segoe UI', system-ui, sans-serif; }
+  .navbar { background: linear-gradient(135deg, #0f172a, #1e3a5f); box-shadow: 0 2px 16px rgba(0,0,0,.2); }
+  .brand-icon { width: 32px; height: 32px; background: linear-gradient(135deg, #1e40af, #3b82f6); border-radius: 8px; display: inline-flex; align-items: center; justify-content: center; margin-right: .5rem; }
+
+  /* Download banner */
+  .download-banner { background: linear-gradient(135deg, #1e3a5f, #1e40af); color: #fff; padding: 1.25rem 1.5rem; border-radius: 14px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem; margin-bottom: 1.5rem; }
+  .download-banner h5 { margin: 0; font-weight: 700; }
+  .download-banner p { margin: .2rem 0 0; opacity: .8; font-size: .87rem; }
+  .btn-download { background: #fff; color: #1e40af; font-weight: 700; border: none; padding: .6rem 1.4rem; border-radius: 8px; font-size: .95rem; display: inline-flex; align-items: center; gap: .5rem; }
+  .btn-download:hover { background: #eff6ff; color: #1e40af; }
+
+  /* Score badges */
+  .score-card { border: none; border-radius: 14px; box-shadow: 0 2px 10px rgba(0,0,0,.06); }
+  .score-num { font-size: 2rem; font-weight: 800; }
+  .badge-high   { background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; }
+  .badge-medium { background: #fffbeb; color: #d97706; border: 1px solid #fde68a; }
+  .badge-low    { background: #eff6ff; color: #2563eb; border: 1px solid #bfdbfe; }
+  .badge-pass   { background: #f0fdf4; color: #16a34a; border: 1px solid #bbf7d0; }
+
+  /* Deal summary */
+  .deal-card { border: none; border-radius: 14px; box-shadow: 0 2px 10px rgba(0,0,0,.06); }
+  .deal-table td, .deal-table th { font-size: .85rem; vertical-align: middle; }
+  .deal-table th { background: #f8faff; font-weight: 600; color: #475569; text-transform: uppercase; font-size: .72rem; letter-spacing: .04em; }
+  .status-ok   { color: #16a34a; font-weight: 600; }
+  .status-iss  { color: #dc2626; font-weight: 600; }
+  .status-nf   { color: #9ca3af; }
+
+  /* Review sections */
+  .section-header { font-size: .75rem; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; padding: .75rem 1rem; border-radius: 8px; margin-bottom: .75rem; display: flex; align-items: center; gap: .5rem; }
+  .sh-high   { background: #fef2f2; color: #dc2626; }
+  .sh-medium { background: #fffbeb; color: #d97706; }
+  .sh-low    { background: #eff6ff; color: #2563eb; }
+  .sh-pass   { background: #f0fdf4; color: #16a34a; }
+
+  .issue-card { background: #fff; border-radius: 12px; border: 1px solid #e2e8f0; padding: 1.25rem 1.5rem; margin-bottom: .875rem; box-shadow: 0 1px 4px rgba(0,0,0,.04); }
+  .issue-card.high   { border-left: 4px solid #dc2626; }
+  .issue-card.medium { border-left: 4px solid #f59e0b; }
+  .issue-card.low    { border-left: 4px solid #3b82f6; }
+  .issue-card.pass   { border-left: 4px solid #22c55e; }
+
+  .issue-title { font-weight: 700; font-size: .95rem; color: #0f172a; margin-bottom: .35rem; }
+  .issue-label { font-size: .7rem; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; padding: 2px 8px; border-radius: 20px; }
+  .il-high   { background: #fef2f2; color: #dc2626; }
+  .il-medium { background: #fffbeb; color: #d97706; }
+  .il-low    { background: #eff6ff; color: #2563eb; }
+  .il-fail   { background: #fef2f2; color: #dc2626; }
+  .il-review { background: #fffbeb; color: #d97706; }
+  .il-pass   { background: #f0fdf4; color: #16a34a; }
+
+  .detail-label { font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: #94a3b8; margin-bottom: .25rem; }
+  .detail-val { font-size: .87rem; color: #374151; }
+  .proposed-box { background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 8px; padding: .75rem 1rem; font-size: .84rem; color: #0c4a6e; margin-top: .75rem; }
+  .proposed-box strong { color: #0369a1; display: block; margin-bottom: .3rem; font-size: .72rem; text-transform: uppercase; letter-spacing: .04em; }
+
+  /* Collapsible passed section */
+  .passed-toggle { cursor: pointer; user-select: none; }
+  .passed-toggle:hover { opacity: .8; }
+</style>
+</head>
+<body>
+
+<nav class="navbar navbar-dark px-4 py-3 d-flex justify-content-between align-items-center">
+  <div class="d-flex align-items-center">
+    <div class="brand-icon">
+      <svg width="18" height="18" fill="white" viewBox="0 0 24 24"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 000 4h6a2 2 0 000-4M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/></svg>
+    </div>
+    <span class="navbar-brand fw-bold mb-0">VIP Lease Review</span>
+  </div>
+  <div class="d-flex gap-2">
+    <a href="/" class="btn btn-sm btn-outline-light"><i class="fa fa-plus me-1"></i>New Review</a>
+    <a href="/logout" class="btn btn-sm btn-outline-light">Sign out</a>
+  </div>
+</nav>
+
+<div class="container-fluid px-4 py-4" style="max-width:1200px">
+
+  <!-- Property header -->
+  <div class="d-flex align-items-start justify-content-between flex-wrap gap-2 mb-4">
+    <div>
+      <h4 class="fw-bold mb-1" style="color:#0f172a">{{ property_name }}</h4>
+      <div class="text-muted small">{{ original_filename }}</div>
+    </div>
+    <a href="/" class="btn btn-sm btn-outline-secondary"><i class="fa fa-arrow-left me-1"></i>New Lease</a>
+  </div>
+
+  <!-- ── DOWNLOAD BANNER (top) ─────────────────────────────────────────── -->
+  <div class="download-banner">
+    <div>
+      <h5><i class="fa fa-file-word me-2"></i>Redlined Word Document Ready</h5>
+      <p>
+        {{ redline_summary.get('applied', 0) }} redline(s) applied as tracked changes.
+        {% if redline_summary.get('skipped', 0) %}
+          {{ redline_summary['skipped'] }} could not be located (exact text may differ slightly in the document).
+        {% endif %}
+        Open in Word → Review → Accept/Reject Changes.
+      </p>
+    </div>
+    <a href="/download/{{ job_id }}" class="btn btn-download">
+      <i class="fa fa-download"></i>Download Redlined .docx
+    </a>
+  </div>
+
+  <!-- ── SCORE SUMMARY ────────────────────────────────────────────────── -->
+  <div class="row g-3 mb-4">
+    {% set high_count   = high_issues | length %}
+    {% set medium_count = medium_issues | length %}
+    {% set low_count    = low_issues | length %}
+    <div class="col-6 col-md-3">
+      <div class="card score-card p-3 text-center badge-high">
+        <div class="score-num">{{ high_count }}</div>
+        <div style="font-size:.8rem;font-weight:600">HIGH PRIORITY</div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="card score-card p-3 text-center badge-medium">
+        <div class="score-num">{{ medium_count }}</div>
+        <div style="font-size:.8rem;font-weight:600">MEDIUM PRIORITY</div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="card score-card p-3 text-center badge-low">
+        <div class="score-num">{{ low_count }}</div>
+        <div style="font-size:.8rem;font-weight:600">LOW PRIORITY</div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="card score-card p-3 text-center badge-pass">
+        <div class="score-num">{{ passes }}</div>
+        <div style="font-size:.8rem;font-weight:600">PASSED</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="row g-4">
+
+    <!-- ── LEFT: DEAL SUMMARY ──────────────────────────────────────────── -->
+    <div class="col-lg-4">
+      <div class="card deal-card p-3 mb-4">
+        <h6 class="fw-bold mb-3" style="color:#0f172a"><i class="fa fa-table me-2" style="color:#3b82f6"></i>Deal Summary</h6>
+        <table class="table deal-table mb-0">
+          <thead>
+            <tr><th>FIELD</th><th>LEASE VALUE</th><th></th></tr>
+          </thead>
+          <tbody>
+            {% for item in deal_summary %}
+            <tr>
+              <td class="fw-semibold" style="color:#374151">{{ item.field }}</td>
+              <td>{{ item.lease_value or '—' }}</td>
+              <td>
+                {% if item.status == 'ok' %}<span class="status-ok">✓</span>
+                {% elif item.status == 'issue' %}<span class="status-iss">⚠</span>
+                {% else %}<span class="status-nf">?</span>{% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+            {% if not deal_summary %}
+            <tr><td colspan="3" class="text-muted text-center small">No deal summary data extracted.</td></tr>
+            {% endif %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ── RIGHT: ISSUES ───────────────────────────────────────────────── -->
+    <div class="col-lg-8">
+
+      <!-- High Priority -->
+      {% if high_issues %}
+      <div class="section-header sh-high">
+        <i class="fa fa-exclamation-circle"></i>High Priority Issues ({{ high_issues|length }})
+      </div>
+      {% for item in high_issues %}
+      {% include 'partials/issue_card.html' %}
+      {% endfor %}
+      {% endif %}
+
+      <!-- Medium Priority -->
+      {% if medium_issues %}
+      <div class="section-header sh-medium mt-3">
+        <i class="fa fa-exclamation-triangle"></i>Medium Priority Issues ({{ medium_issues|length }})
+      </div>
+      {% for item in medium_issues %}
+      {% include 'partials/issue_card.html' %}
+      {% endfor %}
+      {% endif %}
+
+      <!-- Low Priority -->
+      {% if low_issues %}
+      <div class="section-header sh-low mt-3">
+        <i class="fa fa-info-circle"></i>Low Priority Issues ({{ low_issues|length }})
+      </div>
+      {% for item in low_issues %}
+      {% include 'partials/issue_card.html' %}
+      {% endfor %}
+      {% endif %}
+
+      <!-- Passed -->
+      {% if passed %}
+      <div class="section-header sh-pass mt-3 passed-toggle" onclick="togglePassed()">
+        <i class="fa fa-check-circle"></i>Passed ({{ passed|length }})
+        <i class="fa fa-chevron-down ms-auto" id="passedChevron"></i>
+      </div>
+      <div id="passedList" style="display:none">
+        {% for item in passed %}
+        <div class="issue-card pass">
+          <div class="d-flex align-items-center gap-2 flex-wrap">
+            <div class="issue-title">{{ item.section }}</div>
+            <span class="issue-label il-pass">✓ Pass</span>
+            <span class="issue-label il-{{ item.priority|lower }}">{{ item.priority }}</span>
+          </div>
+          {% if item.lease_says %}
+          <div class="mt-2 detail-val" style="color:#6b7280;font-size:.83rem">{{ item.lease_says }}</div>
+          {% endif %}
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
+
+      {% if not high_issues and not medium_issues and not low_issues %}
+      <div class="text-center py-5 text-muted">
+        <i class="fa fa-check-circle fa-3x mb-3" style="color:#22c55e"></i>
+        <div class="fw-semibold">No issues found!</div>
+        <div class="small">This lease meets all VIP Medical Group standards.</div>
+      </div>
+      {% endif %}
+
+    </div>
+  </div>
+</div>
+
+<script>
+function togglePassed() {
+  const list = document.getElementById("passedList");
+  const icon = document.getElementById("passedChevron");
+  const showing = list.style.display !== "none";
+  list.style.display = showing ? "none" : "";
+  icon.className = showing ? "fa fa-chevron-down ms-auto" : "fa fa-chevron-up ms-auto";
+}
+</script>
+</body>
+</html>

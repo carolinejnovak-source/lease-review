@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Analyzing Lease…</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet"/>
+<style>
+  body { background: #f8faff; font-family: 'Segoe UI', system-ui, sans-serif; display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+  .card { border: none; border-radius: 20px; box-shadow: 0 8px 40px rgba(0,0,0,.1); padding: 3rem 3.5rem; max-width: 520px; width: 100%; text-align: center; }
+  .spinner-ring { width: 72px; height: 72px; border: 5px solid #bfdbfe; border-top-color: #3b82f6; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 1.75rem; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  h4 { font-weight: 700; color: #0f172a; margin-bottom: .75rem; }
+  #progressMsg { color: #64748b; font-size: .95rem; min-height: 1.5rem; }
+  .steps { list-style: none; padding: 0; margin: 2rem 0 0; text-align: left; }
+  .steps li { padding: .45rem .75rem; border-radius: 8px; font-size: .875rem; display: flex; align-items: center; gap: .6rem; color: #94a3b8; transition: color .3s; }
+  .steps li.active { color: #1e40af; font-weight: 600; }
+  .steps li.done { color: #16a34a; }
+  .step-dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
+  .filename { background: #eff6ff; border-radius: 8px; padding: .4rem .75rem; font-size: .82rem; color: #1e40af; display: inline-block; margin-bottom: 1.5rem; }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="spinner-ring"></div>
+  <h4>Analyzing Your Lease</h4>
+  <div class="filename">📄 {{ filename }}</div>
+  <div id="progressMsg">Starting analysis…</div>
+
+  <ul class="steps">
+    <li id="step1" class="active"><span class="step-dot"></span>Extracting lease text</li>
+    <li id="step2"><span class="step-dot"></span>GPT-4o review (60-point checklist)</li>
+    <li id="step3"><span class="step-dot"></span>Applying redlines to Word doc</li>
+    <li id="step4"><span class="step-dot"></span>Preparing your results</li>
+  </ul>
+</div>
+
+<script>
+const JOB_ID = "{{ job_id }}";
+let step = 1;
+
+async function poll() {
+  try {
+    const res  = await fetch(`/api/status/${JOB_ID}`);
+    const data = await res.json();
+
+    document.getElementById("progressMsg").textContent = data.progress || "Processing…";
+
+    if (data.status === "done") {
+      markStep(4, "done");
+      document.getElementById("progressMsg").textContent = "Done! Loading results…";
+      window.location.href = `/results/${JOB_ID}`;
+      return;
+    }
+
+    if (data.status === "error") {
+      document.querySelector(".spinner-ring").style.borderTopColor = "#ef4444";
+      document.getElementById("progressMsg").innerHTML = `<span style="color:#ef4444">Error: ${data.error}</span><br><a href="/" class="btn btn-sm btn-outline-secondary mt-3">Try Again</a>`;
+      return;
+    }
+
+    // Advance step indicator based on message content
+    const msg = (data.progress || "").toLowerCase();
+    if (msg.includes("gpt") || msg.includes("analysis") || msg.includes("sending")) markStep(2, "active");
+    if (msg.includes("redlin") || msg.includes("applying")) { markStep(2, "done"); markStep(3, "active"); }
+    if (msg.includes("done") || msg.includes("preparing")) { markStep(3, "done"); markStep(4, "active"); }
+
+    setTimeout(poll, 2500);
+  } catch (e) {
+    setTimeout(poll, 3000);
+  }
+}
+
+function markStep(n, cls) {
+  for (let i = 1; i <= 4; i++) {
+    const el = document.getElementById(`step${i}`);
+    if (i < n) el.className = "done";
+    else if (i === n) el.className = cls;
+    else if (el.className !== "done") el.className = "";
+  }
+}
+
+setTimeout(poll, 1500);
+</script>
+</body>
+</html>

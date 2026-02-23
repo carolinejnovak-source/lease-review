@@ -1,0 +1,38 @@
+{% set priority_lower = item.priority | lower if item.priority else 'low' %}
+{% set status_lower = item.status | lower if item.status else 'review' %}
+<div class="issue-card {{ priority_lower }}">
+  <div class="d-flex align-items-start justify-content-between flex-wrap gap-2 mb-2">
+    <div class="issue-title">{{ item.section }}</div>
+    <div class="d-flex gap-1 flex-wrap">
+      <span class="issue-label il-{{ status_lower }}">
+        {% if status_lower == 'fail' %}✗ Fail{% elif status_lower == 'review' %}⚠ Review{% else %}✓ Pass{% endif %}
+      </span>
+      <span class="issue-label il-{{ priority_lower }}">{{ item.priority }}</span>
+    </div>
+  </div>
+
+  <div class="row g-3">
+    <div class="col-md-6">
+      <div class="detail-label">VIP Standard</div>
+      <div class="detail-val">{{ item.vip_standard or '—' }}</div>
+    </div>
+    <div class="col-md-6">
+      <div class="detail-label">Lease Says</div>
+      <div class="detail-val">{{ item.lease_says or 'Not addressed' }}</div>
+    </div>
+  </div>
+
+  {% if item.issue %}
+  <div class="mt-2">
+    <div class="detail-label">Issue</div>
+    <div class="detail-val" style="color:#dc2626">{{ item.issue }}</div>
+  </div>
+  {% endif %}
+
+  {% if item.proposed_language %}
+  <div class="proposed-box">
+    <strong>Proposed Language</strong>
+    {{ item.proposed_language }}
+  </div>
+  {% endif %}
+</div>
