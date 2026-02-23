@@ -1,19 +1,19 @@
 """
-GPT-4 lease analysis — returns structured review table and redline suggestions.
+Claude lease analysis — returns structured review table and redline suggestions.
 """
-import json, os
-from openai import OpenAI
+import json, os, re
+import anthropic
 from checklist import CHECKLIST_ITEMS, DEAL_SUMMARY_FIELDS, build_checklist_text
 
-OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
+ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
+MODEL = os.environ.get("CLAUDE_MODEL", "claude-opus-4-5")
 
 def get_client():
-    return OpenAI(api_key=OPENAI_API_KEY)
+    return anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
 
 SYSTEM_PROMPT = """You are a senior commercial real estate attorney specializing in medical office leases for VIP Medical Group (a multi-location vein treatment and interventional radiology practice). You review leases with a tenant-favorable perspective, ensuring they meet VIP Medical Group's specific standards.
 
-You must return ONLY valid JSON — no markdown, no extra commentary.
-"""
+You must return ONLY valid JSON — no markdown, no code fences, no extra commentary. Just the raw JSON object."""
 
 ANALYSIS_PROMPT_TEMPLATE = """Review the following commercial lease against VIP Medical Group's standards. Extract deal terms and identify issues.
 
@@ -69,9 +69,18 @@ DEAL_SUMMARY_FIELDS_TEXT = "\n".join([
 ])
 
 
+def _extract_json(text: str) -> str:
+    """Strip markdown fences and extract raw JSON from model output."""
+    text = text.strip()
+    # Remove ```json ... ``` or ``` ... ``` fences
+    text = re.sub(r'^```(?:json)?\s*', '', text)
+    text = re.sub(r'\s*```$', '', text)
+    return text.strip()
+
+
 def analyze_lease(lease_text: str) -> dict:
     """
-    Send lease text to GPT-4o for full analysis.
+    Send lease text to Claude for full analysis.
     Returns dict with deal_summary, review, redlines.
     """
     client = get_client()
@@ -81,8 +90,6 @@ def analyze_lease(lease_text: str) -> dict:
         lease_text = lease_text[:100000] + "\n\n[DOCUMENT TRUNCATED DUE TO LENGTH]"
 
     checklist_text = build_checklist_text()
-
-    # Add deal summary fields to prompt
     full_checklist = checklist_text + "\n\nDEAL SUMMARY FIELDS TO EXTRACT:\n" + DEAL_SUMMARY_FIELDS_TEXT
 
     prompt = ANALYSIS_PROMPT_TEMPLATE.format(
@@ -90,18 +97,17 @@ def analyze_lease(lease_text: str) -> dict:
         lease_text=lease_text,
     )
 
-    response = client.chat.completions.create(
-        model="gpt-4o",
+    response = client.messages.create(
+        model=MODEL,
+        system=SYSTEM_PROMPT,
         messages=[
-            {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": prompt},
         ],
-        response_format={"type": "json_object"},
-        temperature=0.1,
         max_tokens=8000,
+        temperature=0.1,
     )
 
-    raw = response.choices[0].message.content
+    raw = _extract_json(response.content[0].text)
     result = json.loads(raw)
 
     # Ensure all expected keys are present
