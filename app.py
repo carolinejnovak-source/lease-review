@@ -89,31 +89,64 @@ def analyze():
     return render_template("loading.html", job_id=job_id, filename=original_filename)
 
 
+def _find_libreoffice():
+    """Find the LibreOffice/soffice binary."""
+    candidates = [
+        "libreoffice", "soffice",
+        "/usr/bin/libreoffice", "/usr/bin/soffice",
+        "/usr/lib/libreoffice/program/soffice",
+        "/opt/libreoffice/program/soffice",
+    ]
+    for c in candidates:
+        found = shutil.which(c) or (os.path.isfile(c) and os.access(c, os.X_OK) and c)
+        if found:
+            return found
+    raise RuntimeError(
+        "LibreOffice not found. Please upload a .docx file instead, "
+        "or convert your .doc file using Word: File → Save As → .docx"
+    )
+
+
 def _convert_to_docx(doc_path: str) -> str:
     """
     Convert a .doc file to .docx using LibreOffice headless.
+    First tries opening directly as docx (some .doc files are actually OOXML).
+    Falls back to LibreOffice conversion.
     Returns the path of the new .docx file (caller must delete it).
-    Raises RuntimeError if conversion fails.
     """
+    # Fast path: try opening as docx directly (handles misnamed files)
+    try:
+        from docx import Document as _Doc
+        tmp_try = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
+        tmp_try.close()
+        import shutil as _sh
+        _sh.copy2(doc_path, tmp_try.name)
+        _Doc(tmp_try.name)  # will raise if not valid docx
+        return tmp_try.name
+    except Exception:
+        try:
+            os.unlink(tmp_try.name)
+        except Exception:
+            pass
+
+    # LibreOffice path
+    soffice = _find_libreoffice()
     out_dir = tempfile.mkdtemp()
     try:
         result = subprocess.run(
-            ["libreoffice", "--headless", "--convert-to", "docx",
+            [soffice, "--headless", "--convert-to", "docx",
              "--outdir", out_dir, doc_path],
-            capture_output=True, text=True, timeout=60
+            capture_output=True, text=True, timeout=120
         )
         if result.returncode != 0:
             raise RuntimeError(f"LibreOffice conversion failed: {result.stderr}")
-        # LibreOffice names the output file based on the input filename
         base = os.path.splitext(os.path.basename(doc_path))[0]
         converted = os.path.join(out_dir, base + ".docx")
         if not os.path.exists(converted):
-            # Try any .docx in the output dir
             files = [f for f in os.listdir(out_dir) if f.endswith(".docx")]
             if not files:
                 raise RuntimeError("LibreOffice produced no .docx output.")
             converted = os.path.join(out_dir, files[0])
-        # Move to a temp file so we can clean up out_dir
         tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
         tmp.close()
         shutil.move(converted, tmp.name)
