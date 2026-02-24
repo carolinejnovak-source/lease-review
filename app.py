@@ -311,8 +311,12 @@ def _run_analysis(job_id, input_path, original_filename, loi_path=None):
                 "redlined_path": tmp_out.name,
                 "redlined_filename": f"{base}_REDLINED.docx",
             })
+        # Persist WITHOUT holding JOBS_LOCK — _persist_job acquires the lock
+        # internally. Calling it inside a JOBS_LOCK context causes a deadlock
+        # since Python's Lock is not reentrant.
         with JOBS_LOCK:
-            _persist_job(job_id, dict(JOBS[job_id]))
+            job_snapshot = dict(JOBS[job_id])
+        _persist_job(job_id, job_snapshot)
 
     except Exception as e:
         log_error(e, context=f"job {job_id}")
