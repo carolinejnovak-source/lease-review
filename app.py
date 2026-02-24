@@ -1,4 +1,4 @@
-import os, uuid, threading, tempfile, subprocess, shutil
+import os, uuid, threading, tempfile, subprocess, shutil, json
 from flask import (Flask, render_template, request, redirect, url_for,
                    session, flash, jsonify, send_file)
 from auth import login_required, check_credentials
@@ -12,10 +12,50 @@ app.config["MAX_CONTENT_LENGTH"] = 50 * 1024 * 1024  # 50 MB
 
 register_error_handlers(app)
 
+# ── Job persistence directory ─────────────────────────────────────────────────
+JOBS_DIR = "/tmp/lease_jobs"
+os.makedirs(JOBS_DIR, exist_ok=True)
+
 # ── In-memory job store ───────────────────────────────────────────────────────
 # {job_id: {status, progress, result, error, redlined_path, original_filename}}
 JOBS = {}
 JOBS_LOCK = threading.Lock()
+
+
+def _persist_job(job_id, job):
+    """Write a completed job to disk so it survives a container restart."""
+    try:
+        job_dir = os.path.join(JOBS_DIR, job_id)
+        os.makedirs(job_dir, exist_ok=True)
+        meta = {k: v for k, v in job.items() if k != "redlined_path"}
+        with open(os.path.join(job_dir, "meta.json"), "w") as f:
+            json.dump(meta, f)
+        # Copy redlined docx into the job dir for durability
+        if job.get("redlined_path") and os.path.exists(job["redlined_path"]):
+            dest = os.path.join(job_dir, "redlined.docx")
+            shutil.copy2(job["redlined_path"], dest)
+            # Update in-memory entry to point to durable path
+            with JOBS_LOCK:
+                if job_id in JOBS:
+                    JOBS[job_id]["redlined_path"] = dest
+    except Exception:
+        pass  # Persistence is best-effort; don't crash the main flow
+
+
+def _load_job_from_disk(job_id):
+    """Try to load a completed job from disk (fallback after restart)."""
+    try:
+        job_dir = os.path.join(JOBS_DIR, job_id)
+        meta_path = os.path.join(job_dir, "meta.json")
+        if not os.path.exists(meta_path):
+            return None
+        with open(meta_path) as f:
+            job = json.load(f)
+        redlined = os.path.join(job_dir, "redlined.docx")
+        job["redlined_path"] = redlined if os.path.exists(redlined) else None
+        return job
+    except Exception:
+        return None
 
 
 # ── Auth ──────────────────────────────────────────────────────────────────────
@@ -194,6 +234,9 @@ def _run_analysis(job_id, input_path, original_filename):
                 "redlined_path": tmp_out.name,
                 "redlined_filename": f"{base}_REDLINED.docx",
             })
+        # Persist to disk so results survive a container restart
+        with JOBS_LOCK:
+            _persist_job(job_id, dict(JOBS[job_id]))
 
     except Exception as e:
         log_error(e, context=f"job {job_id}")
@@ -225,10 +268,12 @@ def api_status(job_id):
     with JOBS_LOCK:
         job = JOBS.get(job_id)
     if not job:
+        job = _load_job_from_disk(job_id)
+    if not job:
         return jsonify({"status": "not_found"}), 404
     return jsonify({
         "status": job["status"],
-        "progress": job["progress"],
+        "progress": job.get("progress", "Done"),
         "error": job.get("error"),
     })
 
@@ -238,8 +283,16 @@ def api_status(job_id):
 def results(job_id):
     with JOBS_LOCK:
         job = JOBS.get(job_id)
-    if not job or job["status"] != "done":
-        flash("Results not ready yet or job not found.", "warning")
+    if not job:
+        job = _load_job_from_disk(job_id)
+    if not job:
+        flash("Job not found. The server may have restarted — please upload your lease again.", "warning")
+        return redirect(url_for("index"))
+    if job["status"] == "error":
+        flash(f"Analysis failed: {job.get('error', 'Unknown error')}. Please try again.", "danger")
+        return redirect(url_for("index"))
+    if job["status"] != "done":
+        flash("Results not ready yet — please wait for the analysis to complete.", "warning")
         return redirect(url_for("index"))
 
     result = job["result"]
@@ -275,6 +328,8 @@ def results(job_id):
 def download(job_id):
     with JOBS_LOCK:
         job = JOBS.get(job_id)
+    if not job:
+        job = _load_job_from_disk(job_id)
     if not job or not job.get("redlined_path"):
         flash("Redlined document not available.", "danger")
         return redirect(url_for("index"))
