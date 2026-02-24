@@ -78,6 +78,63 @@ def _extract_json(text: str) -> str:
     return text.strip()
 
 
+def _repair_truncated_json(text: str) -> dict:
+    """
+    Attempt to repair truncated JSON by finding the outermost object
+    and closing any open arrays/objects.
+    Returns a partial result dict on success, raises on failure.
+    """
+    # Find the opening brace
+    start = text.find('{')
+    if start == -1:
+        raise ValueError("No JSON object found in response")
+    text = text[start:]
+
+    # Try increasingly aggressive truncation to find parseable JSON
+    # Walk backwards from end, looking for a valid closing point
+    depth = 0
+    in_str = False
+    escape = False
+    last_valid_end = -1
+    for i, c in enumerate(text):
+        if escape:
+            escape = False
+            continue
+        if c == '\\' and in_str:
+            escape = True
+            continue
+        if c == '"':
+            in_str = not in_str
+            continue
+        if in_str:
+            continue
+        if c in '{[':
+            depth += 1
+        elif c in '}]':
+            depth -= 1
+            if depth == 0:
+                last_valid_end = i
+                break
+
+    if last_valid_end > 0:
+        try:
+            return json.loads(text[:last_valid_end + 1])
+        except Exception:
+            pass
+
+    # Brute-force: find last } and try to parse up to it
+    last_brace = text.rfind('}')
+    if last_brace > 0:
+        # Close any open arrays by counting brackets
+        snippet = text[:last_brace + 1]
+        try:
+            return json.loads(snippet)
+        except Exception:
+            pass
+
+    raise ValueError("Could not repair truncated JSON")
+
+
 def analyze_lease(lease_text: str) -> dict:
     """
     Send lease text to Claude for full analysis.
@@ -103,12 +160,16 @@ def analyze_lease(lease_text: str) -> dict:
         messages=[
             {"role": "user", "content": prompt},
         ],
-        max_tokens=8000,
+        max_tokens=16000,
         temperature=0.1,
     )
 
     raw = _extract_json(response.content[0].text)
-    result = json.loads(raw)
+    try:
+        result = json.loads(raw)
+    except json.JSONDecodeError:
+        # Response may be truncated — attempt repair
+        result = _repair_truncated_json(raw)
 
     # Ensure all expected keys are present
     result.setdefault("property_name", "Unknown Property")
