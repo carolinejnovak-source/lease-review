@@ -28,6 +28,14 @@
   .btn-analyze { background: linear-gradient(135deg, #1e40af, #3b82f6); border: none; padding: .75rem 2.5rem; font-size: 1.05rem; font-weight: 700; border-radius: 10px; color: #fff; }
   .btn-analyze:hover { background: linear-gradient(135deg, #1d4ed8, #60a5fa); color: #fff; }
   .file-badge { background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: .5rem 1rem; font-size: .88rem; color: #1e40af; display: inline-flex; align-items: center; gap: .5rem; margin-top: .75rem; }
+  .loi-section { border-top: 1px solid #e2e8f0; padding-top: 1.25rem; }
+  .loi-label { font-size: .8rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: #64748b; }
+  .loi-options { display: flex; flex-direction: column; gap: .5rem; }
+  .loi-radio { cursor: pointer; display: block; }
+  .loi-radio input[type=radio] { display: none; }
+  .loi-radio-box { display: flex; align-items: center; padding: .6rem 1rem; border: 2px solid #e2e8f0; border-radius: 10px; font-size: .9rem; color: #374151; transition: all .15s; }
+  .loi-radio input:checked + .loi-radio-box { border-color: #3b82f6; background: #eff6ff; color: #1e40af; font-weight: 600; }
+  .upload-zone-sm { padding: 1rem 1.5rem; }
 </style>
 </head>
 <body>
@@ -59,17 +67,54 @@
 
   <div class="upload-card">
     <form method="post" action="/analyze" enctype="multipart/form-data" id="uploadForm">
+
+      <!-- Lease Upload -->
       <div class="upload-zone" id="uploadZone" onclick="document.getElementById('leaseFile').click()">
-        <div class="upload-icon"><i class="fa fa-file-word"></i></div>
+        <div class="upload-icon"><i class="fa fa-file-upload"></i></div>
         <div style="font-size:1.05rem;color:#0f172a">
           <span class="upload-link">Click to upload</span> or drag and drop
         </div>
-        <div class="text-muted small mt-2">Supported format: .docx (Word document)</div>
+        <div class="text-muted small mt-2">Supported formats: .docx, .doc, .pdf</div>
         <div id="fileBadge" style="display:none" class="mt-3">
           <span class="file-badge"><i class="fa fa-file-word"></i><span id="fileName"></span></span>
         </div>
-        <input type="file" name="lease" id="leaseFile" accept=".docx,.doc" style="display:none" onchange="handleFile(this)"/>
+        <input type="file" name="lease" id="leaseFile" accept=".docx,.doc,.pdf" style="display:none" onchange="handleFile(this)"/>
       </div>
+
+      <!-- LOI Option -->
+      <div class="loi-section mt-4">
+        <div class="loi-label mb-2">Letter of Intent (LOI)</div>
+        <div class="loi-options">
+          <label class="loi-radio" id="loiNoLabel">
+            <input type="radio" name="has_loi" value="no" checked onchange="toggleLOI(this)"/>
+            <span class="loi-radio-box">
+              <i class="fa fa-ban me-1" style="color:#94a3b8"></i>
+              No LOI — analyze against VIP standards only
+            </span>
+          </label>
+          <label class="loi-radio" id="loiYesLabel">
+            <input type="radio" name="has_loi" value="yes" onchange="toggleLOI(this)"/>
+            <span class="loi-radio-box">
+              <i class="fa fa-file-alt me-1" style="color:#3b82f6"></i>
+              I have an LOI — cross-reference with lease
+            </span>
+          </label>
+        </div>
+
+        <div id="loiUploadArea" style="display:none" class="mt-3">
+          <div class="upload-zone upload-zone-sm" id="loiZone" onclick="document.getElementById('loiFile').click()">
+            <div style="font-size:.95rem;color:#0f172a">
+              <span class="upload-link">Upload LOI</span>
+              <span class="text-muted small ms-1">.docx, .doc, or .pdf</span>
+            </div>
+            <div id="loiBadge" style="display:none" class="mt-2">
+              <span class="file-badge"><i class="fa fa-file-alt"></i><span id="loiFileName"></span></span>
+            </div>
+            <input type="file" name="loi" id="loiFile" accept=".docx,.doc,.pdf" style="display:none" onchange="handleLoiFile(this)"/>
+          </div>
+        </div>
+      </div>
+
       <div class="text-center mt-4">
         <button type="submit" class="btn btn-analyze" id="analyzeBtn" disabled>
           <i class="fa fa-search me-2"></i>Analyze Lease
@@ -91,8 +136,8 @@
       <div class="col-md-4">
         <div class="fcard">
           <div class="fcard-accent"></div>
-          <h6>Real Word Redlines</h6>
-          <p>Download a .docx with actual tracked changes — insertions and deletions your attorney can accept or reject in Word.</p>
+          <h6>Redlines + Comment Annotations</h6>
+          <p>Download a .docx with tracked changes for specific fixes, plus yellow-highlighted comment annotations for issues requiring negotiation.</p>
         </div>
       </div>
       <div class="col-md-4">
@@ -115,6 +160,18 @@ function handleFile(input) {
   document.getElementById("analyzeBtn").disabled = false;
 }
 
+function handleLoiFile(input) {
+  const file = input.files[0];
+  if (!file) return;
+  document.getElementById("loiFileName").textContent = file.name;
+  document.getElementById("loiBadge").style.display = "";
+}
+
+function toggleLOI(radio) {
+  const area = document.getElementById("loiUploadArea");
+  area.style.display = (radio.value === "yes") ? "" : "none";
+}
+
 const zone = document.getElementById("uploadZone");
 zone.addEventListener("dragover", e => { e.preventDefault(); zone.classList.add("drag"); });
 zone.addEventListener("dragleave", () => zone.classList.remove("drag"));
@@ -126,6 +183,20 @@ zone.addEventListener("drop", e => {
     handleFile(document.getElementById("leaseFile"));
   }
 });
+
+const loiZone = document.getElementById("loiZone");
+if (loiZone) {
+  loiZone.addEventListener("dragover", e => { e.preventDefault(); loiZone.classList.add("drag"); });
+  loiZone.addEventListener("dragleave", () => loiZone.classList.remove("drag"));
+  loiZone.addEventListener("drop", e => {
+    e.preventDefault(); loiZone.classList.remove("drag");
+    const file = e.dataTransfer.files[0];
+    if (file) {
+      document.getElementById("loiFile").files = e.dataTransfer.files;
+      handleLoiFile(document.getElementById("loiFile"));
+    }
+  });
+}
 </script>
 </body>
 </html>

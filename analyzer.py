@@ -8,19 +8,35 @@ from checklist import CHECKLIST_ITEMS, DEAL_SUMMARY_FIELDS, build_checklist_text
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 MODEL = os.environ.get("CLAUDE_MODEL", "claude-opus-4-5")
 
+# VIP standards that are ranges — for these we insert comments, not redlines
+RANGE_PATTERN = re.compile(
+    r'\d[\d,\.]*\s*[–\-]\s*\d|'       # numeric range: 3–6, 100–130, $40–$60
+    r'\d+%\s*[–\-]\s*\d+%|'            # percent range: 4–5%
+    r'\$\d.*\$\d|'                      # dollar ranges: $100–$130
+    r'\d+\s*(months?|weeks?|days?)\s*(minimum|max|or|to)\s*\d+',  # time ranges
+    re.IGNORECASE
+)
+
+
+def _is_range_standard(vip_standard: str) -> bool:
+    return bool(RANGE_PATTERN.search(vip_standard or ""))
+
+
 def get_client():
     return anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+
 
 SYSTEM_PROMPT = """You are a senior commercial real estate attorney specializing in medical office leases for VIP Medical Group (a multi-location vein treatment and interventional radiology practice). You review leases with a tenant-favorable perspective, ensuring they meet VIP Medical Group's specific standards.
 
 You must return ONLY valid JSON — no markdown, no code fences, no extra commentary. Just the raw JSON object."""
+
 
 ANALYSIS_PROMPT_TEMPLATE = """Review the following commercial lease against VIP Medical Group's standards. Extract deal terms and identify issues.
 
 === VIP MEDICAL GROUP CHECKLIST ===
 {checklist}
 
-=== LEASE TEXT ===
+{loi_section}=== LEASE TEXT ===
 {lease_text}
 
 Return a single JSON object with this exact structure:
@@ -29,7 +45,7 @@ Return a single JSON object with this exact structure:
   "deal_summary": [
     {{
       "field": "field name",
-      "lease_value": "what the lease says or 'Not specified'",
+      "lease_value": "what the lease actually says (quote directly from the lease — do NOT say 'not specified' unless you have read the full relevant section and it truly is absent)",
       "vip_standard": "our standard",
       "status": "ok" | "issue" | "not_found"
     }}
@@ -39,29 +55,36 @@ Return a single JSON object with this exact structure:
       "section": "Lease Section name",
       "priority": "High" | "Medium" | "Low",
       "vip_standard": "our standard",
-      "lease_says": "verbatim quote or summary of what the lease actually says; 'Not addressed' if silent",
+      "lease_says": "verbatim quote or summary of what the lease actually says; 'Not addressed' if truly silent",
       "status": "pass" | "fail" | "review",
       "issue": "specific problem description if fail/review, else null",
-      "proposed_language": "proposed lease language to fix the issue if fail/review, else null"
+      "proposed_language": "proposed lease language to fix the issue — see rules below"
     }}
   ],
   "redlines": [
     {{
       "section": "section name",
-      "find": "EXACT verbatim text from the lease to be replaced (keep short and specific — one sentence or clause, not a full paragraph)",
+      "find": "EXACT verbatim text from the lease to be replaced (keep short — one sentence or clause only)",
       "replace": "proposed replacement language",
       "reason": "brief reason for change"
     }}
   ]
 }}
 
-IMPORTANT for redlines:
-- Only include redlines for genuine issues (fail or review status)
-- The "find" text must be EXACTLY as it appears in the lease document (verbatim)
-- Keep "find" text short and specific — just the offending clause, not an entire section
-- If a clause is missing entirely (not in the lease), skip the redline for that item
-- Maximum 20 redlines — focus on High and Medium priority issues
-"""
+=== CRITICAL RULES FOR PROPOSED LANGUAGE ===
+1. RANGE STANDARDS: If the VIP standard is expressed as a range (e.g., "3–6 months", "$100–$130 per RSF", "4–5%", "100–120%"), set proposed_language to null. The system will automatically insert a comment annotation in the document for the attorney to negotiate the specific number.
+2. NO INVENTED NUMBERS: Never choose a specific number from within a range on your own. Do not write "4 months" when the standard says "3–6 months". Do not write "$115 per RSF" when the standard says "$100–$130 per RSF".
+3. MISSING CLAUSES: If the lease is entirely silent on a topic (no text to replace), set proposed_language to language that can be ADDED to the lease. Do NOT generate a redline entry for it (since there is no "find" text).
+4. VERBATIM FIND TEXT: The "find" field in redlines must be EXACT verbatim text from the lease — copy it character-for-character. Keep it short: one sentence or clause, not a full paragraph.
+5. DEAL SUMMARY ACCURACY: For deal_summary fields, read the FULL lease text carefully before saying a value is "not specified." Many leases define base rent, escalation, and RSF in early sections (Basic Terms, Summary of Basic Lease Terms, or similar). Quote the actual lease value.
+
+=== RULES FOR REDLINES ===
+- Only for genuine issues (fail or review status)
+- Skip redline entry entirely if the clause is MISSING from the lease (nothing to replace)
+- Maximum 20 redlines — High and Medium priority only
+- If VIP standard is a range → no redline, system inserts comment instead
+{loi_rules}"""
+
 
 DEAL_SUMMARY_FIELDS_TEXT = "\n".join([
     f"- {f['field']}: VIP Standard = {f['vip_standard']}"
@@ -70,28 +93,18 @@ DEAL_SUMMARY_FIELDS_TEXT = "\n".join([
 
 
 def _extract_json(text: str) -> str:
-    """Strip markdown fences and extract raw JSON from model output."""
     text = text.strip()
-    # Remove ```json ... ``` or ``` ... ``` fences
     text = re.sub(r'^```(?:json)?\s*', '', text)
     text = re.sub(r'\s*```$', '', text)
     return text.strip()
 
 
 def _repair_truncated_json(text: str) -> dict:
-    """
-    Attempt to repair truncated JSON by finding the outermost object
-    and closing any open arrays/objects.
-    Returns a partial result dict on success, raises on failure.
-    """
-    # Find the opening brace
     start = text.find('{')
     if start == -1:
         raise ValueError("No JSON object found in response")
     text = text[start:]
 
-    # Try increasingly aggressive truncation to find parseable JSON
-    # Walk backwards from end, looking for a valid closing point
     depth = 0
     in_str = False
     escape = False
@@ -122,10 +135,8 @@ def _repair_truncated_json(text: str) -> dict:
         except Exception:
             pass
 
-    # Brute-force: find last } and try to parse up to it
     last_brace = text.rfind('}')
     if last_brace > 0:
-        # Close any open arrays by counting brackets
         snippet = text[:last_brace + 1]
         try:
             return json.loads(snippet)
@@ -135,31 +146,65 @@ def _repair_truncated_json(text: str) -> dict:
     raise ValueError("Could not repair truncated JSON")
 
 
-def analyze_lease(lease_text: str) -> dict:
+def analyze_lease(lease_text: str, loi_text: str = None) -> dict:
     """
-    Send lease text to Claude for full analysis.
+    Send lease text (and optional LOI text) to Claude for full analysis.
     Returns dict with deal_summary, review, redlines.
     """
     client = get_client()
 
-    # Truncate to ~100k chars to stay within context limits
-    if len(lease_text) > 100000:
-        lease_text = lease_text[:100000] + "\n\n[DOCUMENT TRUNCATED DUE TO LENGTH]"
+    # Allow up to ~400k chars — well within Claude's 200k token window
+    MAX_CHARS = 400000
+    if len(lease_text) > MAX_CHARS:
+        lease_text = lease_text[:MAX_CHARS] + "\n\n[DOCUMENT TRUNCATED — remaining text exceeds extraction limit]"
+
+    if loi_text and len(loi_text) > 50000:
+        loi_text = loi_text[:50000] + "\n\n[LOI TRUNCATED]"
 
     checklist_text = build_checklist_text()
     full_checklist = checklist_text + "\n\nDEAL SUMMARY FIELDS TO EXTRACT:\n" + DEAL_SUMMARY_FIELDS_TEXT
 
+    # Mark range standards in checklist so Claude sees which ones apply
+    range_sections = [
+        item['section'] for item in CHECKLIST_ITEMS
+        if _is_range_standard(item.get('vip_standard', ''))
+    ]
+    range_note = ""
+    if range_sections:
+        range_note = (
+            "\nRANGE STANDARD SECTIONS (set proposed_language=null for these if they fail): "
+            + ", ".join(range_sections)
+        )
+
+    # LOI section
+    if loi_text:
+        loi_section = f"""=== LETTER OF INTENT (LOI) ===
+{loi_text}
+
+IMPORTANT: Cross-reference the LOI against the lease. For each term negotiated in the LOI,
+verify it is reflected in the lease. Flag any LOI term that is:
+- Missing from the lease entirely
+- Less favorable in the lease than what was agreed in the LOI
+- Materially different from what the LOI specified
+Add these as HIGH priority "LOI Discrepancy" issues in the review array.
+
+"""
+        loi_rules = "- LOI DISCREPANCIES: Flag as HIGH priority with section = 'LOI: [term name]'"
+    else:
+        loi_section = ""
+        loi_rules = ""
+
     prompt = ANALYSIS_PROMPT_TEMPLATE.format(
-        checklist=full_checklist,
+        checklist=full_checklist + range_note,
         lease_text=lease_text,
+        loi_section=loi_section,
+        loi_rules=loi_rules,
     )
 
     response = client.messages.create(
         model=MODEL,
         system=SYSTEM_PROMPT,
-        messages=[
-            {"role": "user", "content": prompt},
-        ],
+        messages=[{"role": "user", "content": prompt}],
         max_tokens=16000,
         temperature=0.1,
     )
@@ -168,13 +213,19 @@ def analyze_lease(lease_text: str) -> dict:
     try:
         result = json.loads(raw)
     except json.JSONDecodeError:
-        # Response may be truncated — attempt repair
         result = _repair_truncated_json(raw)
 
-    # Ensure all expected keys are present
     result.setdefault("property_name", "Unknown Property")
     result.setdefault("deal_summary", [])
     result.setdefault("review", [])
     result.setdefault("redlines", [])
+
+    # Remove redlines for range standards — comments will be used instead
+    result["redlines"] = [
+        r for r in result["redlines"]
+        if not _is_range_standard(
+            next((i.get('vip_standard','') for i in CHECKLIST_ITEMS if i['section'] == r.get('section','')), '')
+        )
+    ]
 
     return result

@@ -2,7 +2,14 @@
 {% set status_lower = item.status | lower if item.status else 'review' %}
 <div class="issue-card {{ priority_lower }}">
   <div class="d-flex align-items-start justify-content-between flex-wrap gap-2 mb-2">
-    <div class="issue-title">{{ item.section }}</div>
+    <div class="d-flex align-items-center gap-2 flex-wrap">
+      <div class="issue-title">{{ item.section }}</div>
+      {% if item.action_taken == 'redline' %}
+        <span class="action-badge badge-redline">Redline Applied</span>
+      {% elif item.action_taken == 'comment' %}
+        <span class="action-badge badge-comment">Comment Applied</span>
+      {% endif %}
+    </div>
     <div class="d-flex gap-1 flex-wrap">
       <span class="issue-label il-{{ status_lower }}">
         {% if status_lower == 'fail' %}✗ Fail{% elif status_lower == 'review' %}⚠ Review{% else %}✓ Pass{% endif %}

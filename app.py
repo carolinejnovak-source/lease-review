@@ -4,7 +4,7 @@ from flask import (Flask, render_template, request, redirect, url_for,
 from auth import login_required, check_credentials
 from error_log import register_error_handlers, log_error
 from analyzer import analyze_lease
-from redline import apply_redlines, extract_text
+from redline import apply_redlines, extract_text, extract_text_from_pdf, create_docx_from_text
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "vip-lease-review-2026")
@@ -99,14 +99,26 @@ def analyze():
         return redirect(url_for("index"))
 
     ext = os.path.splitext(f.filename)[1].lower()
-    if ext not in (".docx", ".doc"):
-        flash("Please upload a .docx file.", "danger")
+    if ext not in (".docx", ".doc", ".pdf"):
+        flash("Please upload a .docx, .doc, or .pdf file.", "danger")
         return redirect(url_for("index"))
 
-    # Save uploaded file to temp
+    # Save lease file to temp
     tmp_in = tempfile.NamedTemporaryFile(delete=False, suffix=ext)
     f.save(tmp_in.name)
     tmp_in.close()
+
+    # Handle optional LOI file
+    loi_path = None
+    loi_f = request.files.get("loi")
+    has_loi = request.form.get("has_loi") == "yes"
+    if has_loi and loi_f and loi_f.filename:
+        loi_ext = os.path.splitext(loi_f.filename)[1].lower()
+        if loi_ext in (".docx", ".doc", ".pdf"):
+            tmp_loi = tempfile.NamedTemporaryFile(delete=False, suffix=loi_ext)
+            loi_f.save(tmp_loi.name)
+            tmp_loi.close()
+            loi_path = tmp_loi.name
 
     job_id = str(uuid.uuid4())
     original_filename = f.filename
@@ -122,7 +134,7 @@ def analyze():
         }
 
     # Start background analysis
-    t = threading.Thread(target=_run_analysis, args=(job_id, tmp_in.name, original_filename))
+    t = threading.Thread(target=_run_analysis, args=(job_id, tmp_in.name, original_filename, loi_path))
     t.daemon = True
     t.start()
 
@@ -195,36 +207,101 @@ def _convert_to_docx(doc_path: str) -> str:
         shutil.rmtree(out_dir, ignore_errors=True)
 
 
-def _run_analysis(job_id, input_path, original_filename):
-    tmp_out = None
-    converted_path = None  # Track converted .doc→.docx so we can delete it
-    try:
-        # Convert .doc → .docx if needed
-        if input_path.lower().endswith(".doc"):
-            _update_job(job_id, progress="Converting .doc to .docx…")
-            converted_path = _convert_to_docx(input_path)
-            processing_path = converted_path
-        else:
-            processing_path = input_path
+def _extract_lease_text(input_path: str) -> tuple:
+    """
+    Extract text from .docx, .doc, or .pdf.
+    Returns (lease_text, processing_path, converted_path)
+    where processing_path is the .docx to apply redlines to.
+    """
+    ext = input_path.lower().split('.')[-1]
+    converted_path = None
 
-        _update_job(job_id, progress="Extracting lease text…")
+    if ext == 'pdf':
+        lease_text = extract_text_from_pdf(input_path)
+        # Create a basic .docx for redlining (PDF can't be redlined directly)
+        tmp_docx = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
+        tmp_docx.close()
+        create_docx_from_text(lease_text, tmp_docx.name)
+        processing_path = tmp_docx.name
+        converted_path = tmp_docx.name
+    elif ext == 'doc':
+        converted_path = _convert_to_docx(input_path)
+        processing_path = converted_path
+        lease_text = extract_text(processing_path)
+    else:
+        processing_path = input_path
         lease_text = extract_text(processing_path)
 
+    return lease_text, processing_path, converted_path
+
+
+def _extract_loi_text(loi_path: str) -> str:
+    """Extract text from LOI file (.docx, .doc, or .pdf)."""
+    ext = loi_path.lower().split('.')[-1]
+    if ext == 'pdf':
+        return extract_text_from_pdf(loi_path)
+    elif ext == 'doc':
+        converted = _convert_to_docx(loi_path)
+        try:
+            return extract_text(converted)
+        finally:
+            try:
+                os.unlink(converted)
+            except Exception:
+                pass
+    else:
+        return extract_text(loi_path)
+
+
+def _run_analysis(job_id, input_path, original_filename, loi_path=None):
+    tmp_out = None
+    converted_path = None
+    try:
+        # Extract text and get the processing .docx path
+        _update_job(job_id, progress="Extracting lease text…")
+        lease_text, processing_path, converted_path = _extract_lease_text(input_path)
+
         if len(lease_text.strip()) < 100:
-            raise ValueError("Could not extract readable text from the document. Is it a valid .docx file?")
+            raise ValueError("Could not extract readable text. Is this a valid document?")
 
-        _update_job(job_id, progress="Sending to GPT-4o for analysis (this takes 30–60 seconds)…")
-        result = analyze_lease(lease_text)
+        # Extract LOI text if provided
+        loi_text = None
+        if loi_path:
+            _update_job(job_id, progress="Extracting LOI text…")
+            try:
+                loi_text = _extract_loi_text(loi_path)
+            except Exception as e:
+                log_error(e, context=f"LOI extraction job {job_id}")
+                # Continue without LOI rather than failing the whole job
 
-        _update_job(job_id, progress=f"Analysis complete. Applying {len(result.get('redlines', []))} redlines to document…")
+        loi_note = " (cross-referencing with LOI)" if loi_text else ""
+        _update_job(job_id, progress=f"Sending to Claude AI for analysis{loi_note} — this takes 30–60 seconds…")
+        result = analyze_lease(lease_text, loi_text=loi_text)
 
-        # Generate redlined docx
+        # Gather all fail/review issues for comment annotation fallback
+        all_issues = [
+            item for item in result.get("review", [])
+            if item.get("status") in ("fail", "review")
+        ]
+
+        _update_job(job_id, progress=f"Analysis complete. Applying redlines and comment annotations…")
+
         base = os.path.splitext(original_filename)[0]
         tmp_out = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
         tmp_out.close()
 
-        redline_summary = apply_redlines(processing_path, result.get("redlines", []), tmp_out.name)
+        redline_summary = apply_redlines(
+            processing_path,
+            result.get("redlines", []),
+            tmp_out.name,
+            issues=all_issues,
+        )
         result["redline_summary"] = redline_summary
+
+        # Enrich each review item with its action_taken (for badge display)
+        section_actions = redline_summary.get("section_actions", {})
+        for item in result.get("review", []):
+            item["action_taken"] = section_actions.get(item.get("section"))
 
         with JOBS_LOCK:
             JOBS[job_id].update({
@@ -234,7 +311,6 @@ def _run_analysis(job_id, input_path, original_filename):
                 "redlined_path": tmp_out.name,
                 "redlined_filename": f"{base}_REDLINED.docx",
             })
-        # Persist to disk so results survive a container restart
         with JOBS_LOCK:
             _persist_job(job_id, dict(JOBS[job_id]))
 
@@ -246,7 +322,7 @@ def _run_analysis(job_id, input_path, original_filename):
                 "error": str(e),
             })
     finally:
-        for path in [input_path, converted_path]:
+        for path in [input_path, loi_path, converted_path]:
             if path:
                 try:
                     os.unlink(path)
