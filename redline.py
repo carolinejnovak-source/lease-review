@@ -121,21 +121,25 @@ def _apply_to_para(para, find_text, replace_text, change_id):
 
 # ── Comment annotation ────────────────────────────────────────────────────────
 
-def _insert_comment_annotation(doc, section_name, issue_text, vip_standard=""):
+def _insert_comment_annotation(doc, section_name, issue_text, vip_standard="") -> int:
     """
     Insert a visually distinctive yellow-highlighted comment annotation
     near the relevant section of the document.
+    Returns the paragraph index (0-based) where the annotation was anchored,
+    or 999999 if no anchor was found.
     """
     # Find the best paragraph: keywords from section name
     target_para = None
+    target_para_idx = 999999
     keywords = [w for w in section_name.lower().split() if len(w) > 3]
 
-    for para in doc.paragraphs:
+    for para_idx, para in enumerate(doc.paragraphs):
         if not para.text.strip():
             continue
         para_lower = para.text.lower()
         if keywords and any(kw in para_lower for kw in keywords):
             target_para = para
+            target_para_idx = para_idx
             break
 
     # Also search tables if not found
@@ -199,6 +203,8 @@ def _insert_comment_annotation(doc, section_name, issue_text, vip_standard=""):
         else:
             body.append(comment_para)
 
+    return target_para_idx
+
 
 # ── Public API ───────────────────────────────────────────────────────────────
 
@@ -216,7 +222,8 @@ def apply_redlines(input_path: str, redlines: list, output_path: str,
     change_id = 1
     applied = 0
     comments = 0
-    section_actions = {}  # section -> "redline" | "comment"
+    section_actions = {}   # section -> "redline" | "comment"
+    section_positions = {} # section -> paragraph index in document (for lease-order sort)
 
     # Index issues by section for quick lookup
     issues_by_section = {}
@@ -238,12 +245,13 @@ def apply_redlines(input_path: str, redlines: list, output_path: str,
         found = False
 
         # Search paragraphs
-        for para in doc.paragraphs:
+        for para_idx, para in enumerate(doc.paragraphs):
             change_id, ok = _apply_to_para(para, find, replace, change_id)
             if ok:
                 found = True
                 applied += 1
                 section_actions[section] = "redline"
+                section_positions[section] = para_idx
                 break
 
         # Search table cells
@@ -257,6 +265,8 @@ def apply_redlines(input_path: str, redlines: list, output_path: str,
                                 found = True
                                 applied += 1
                                 section_actions[section] = "redline"
+                                # Tables don't have a simple global para_idx; use 999998
+                                section_positions[section] = 999998
                                 break
                         if found: break
                     if found: break
@@ -267,8 +277,9 @@ def apply_redlines(input_path: str, redlines: list, output_path: str,
             issue_obj  = issues_by_section.get(section, {})
             issue_text = issue_obj.get('issue') or reason or "Review required per VIP standards"
             vip_std    = issue_obj.get('vip_standard') or ""
-            _insert_comment_annotation(doc, section, issue_text, vip_std)
+            para_idx = _insert_comment_annotation(doc, section, issue_text, vip_std)
             section_actions[section] = "comment"
+            section_positions[section] = para_idx
             comments += 1
 
     # ── Step 2: Comments for High/Medium issues without any redline ───────────
@@ -285,8 +296,9 @@ def apply_redlines(input_path: str, redlines: list, output_path: str,
 
             issue_text = issue.get('issue') or 'Review required per VIP standards'
             vip_std    = issue.get('vip_standard') or ''
-            _insert_comment_annotation(doc, sec, issue_text, vip_std)
+            para_idx = _insert_comment_annotation(doc, sec, issue_text, vip_std)
             section_actions[sec] = "comment"
+            section_positions[sec] = para_idx
             comments += 1
 
     doc.save(output_path)
@@ -295,6 +307,7 @@ def apply_redlines(input_path: str, redlines: list, output_path: str,
         "comments": comments,
         "skipped": 0,
         "section_actions": section_actions,
+        "section_positions": section_positions,
     }
 
 

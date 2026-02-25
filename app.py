@@ -298,10 +298,14 @@ def _run_analysis(job_id, input_path, original_filename, loi_path=None):
         )
         result["redline_summary"] = redline_summary
 
-        # Enrich each review item with its action_taken (for badge display)
-        section_actions = redline_summary.get("section_actions", {})
-        for item in result.get("review", []):
-            item["action_taken"] = section_actions.get(item.get("section"))
+        # Enrich each review item with action_taken (badge) and lease_position (sort order)
+        section_actions    = redline_summary.get("section_actions", {})
+        section_positions  = redline_summary.get("section_positions", {})
+        for idx, item in enumerate(result.get("review", [])):
+            sec = item.get("section")
+            item["action_taken"]    = section_actions.get(sec)
+            item["lease_position"]  = section_positions.get(sec, 999999)
+            item["checklist_index"] = idx
 
         with JOBS_LOCK:
             JOBS[job_id].update({
@@ -377,6 +381,11 @@ def results(job_id):
 
     result = job["result"]
     review = result.get("review", [])
+
+    # Ensure lease_position exists on every item (older persisted jobs may lack it)
+    for idx, r in enumerate(review):
+        if "lease_position" not in r:
+            r["lease_position"] = idx * 100  # preserve relative order for old jobs
 
     high   = [r for r in review if r.get("priority") == "High"   and r.get("status") != "pass"]
     medium = [r for r in review if r.get("priority") == "Medium" and r.get("status") != "pass"]

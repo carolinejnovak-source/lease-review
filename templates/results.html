@@ -178,74 +178,140 @@
     <!-- ── RIGHT: ISSUES ───────────────────────────────────────────────── -->
     <div class="col-lg-8">
 
-      <!-- High Priority -->
-      {% if high_issues %}
-      <div class="section-header sh-high">
-        <i class="fa fa-exclamation-circle"></i>High Priority Issues ({{ high_issues|length }})
+      <!-- Sort control -->
+      <div class="d-flex align-items-center justify-content-end mb-3 gap-2">
+        <label for="sortMode" class="text-muted small fw-semibold mb-0" style="white-space:nowrap">
+          <i class="fa fa-sort me-1"></i>Sort by
+        </label>
+        <select id="sortMode" class="form-select form-select-sm" style="width:auto;min-width:200px" onchange="applySort()">
+          <option value="checklist">Checklist</option>
+          <option value="lease">Appearance in Lease</option>
+        </select>
       </div>
-      {% for item in high_issues %}
-      {% include 'partials/issue_card.html' %}
-      {% endfor %}
-      {% endif %}
 
-      <!-- Medium Priority -->
-      {% if medium_issues %}
-      <div class="section-header sh-medium mt-3">
-        <i class="fa fa-exclamation-triangle"></i>Medium Priority Issues ({{ medium_issues|length }})
-      </div>
-      {% for item in medium_issues %}
-      {% include 'partials/issue_card.html' %}
-      {% endfor %}
-      {% endif %}
+      <!-- ── VIEW: CHECKLIST (default) ────────────────────────────────── -->
+      <div id="view-checklist">
 
-      <!-- Low Priority -->
-      {% if low_issues %}
-      <div class="section-header sh-low mt-3">
-        <i class="fa fa-info-circle"></i>Low Priority Issues ({{ low_issues|length }})
-      </div>
-      {% for item in low_issues %}
-      {% include 'partials/issue_card.html' %}
-      {% endfor %}
-      {% endif %}
-
-      <!-- Passed -->
-      {% if passed %}
-      <div class="section-header sh-pass mt-3 passed-toggle" onclick="togglePassed()">
-        <i class="fa fa-check-circle"></i>Passed ({{ passed|length }})
-        <i class="fa fa-chevron-down ms-auto" id="passedChevron"></i>
-      </div>
-      <div id="passedList" style="display:none">
-        {% for item in passed %}
-        <div class="issue-card pass">
-          <div class="d-flex align-items-center gap-2 flex-wrap">
-            <div class="issue-title">{{ item.section }}</div>
-            <span class="issue-label il-pass">✓ Pass</span>
-            <span class="issue-label il-{{ item.priority|lower }}">{{ item.priority }}</span>
-          </div>
-          {% if item.lease_says %}
-          <div class="mt-2 detail-val" style="color:#6b7280;font-size:.83rem">{{ item.lease_says }}</div>
-          {% endif %}
+        {% if high_issues %}
+        <div class="section-header sh-high">
+          <i class="fa fa-exclamation-circle"></i>High Priority Issues ({{ high_issues|length }})
         </div>
+        {% for item in high_issues %}
+        {% include 'partials/issue_card.html' %}
         {% endfor %}
-      </div>
-      {% endif %}
+        {% endif %}
 
-      {% if not high_issues and not medium_issues and not low_issues %}
-      <div class="text-center py-5 text-muted">
-        <i class="fa fa-check-circle fa-3x mb-3" style="color:#22c55e"></i>
-        <div class="fw-semibold">No issues found!</div>
-        <div class="small">This lease meets all VIP Medical Group standards.</div>
-      </div>
-      {% endif %}
+        {% if medium_issues %}
+        <div class="section-header sh-medium mt-3">
+          <i class="fa fa-exclamation-triangle"></i>Medium Priority Issues ({{ medium_issues|length }})
+        </div>
+        {% for item in medium_issues %}
+        {% include 'partials/issue_card.html' %}
+        {% endfor %}
+        {% endif %}
+
+        {% if low_issues %}
+        <div class="section-header sh-low mt-3">
+          <i class="fa fa-info-circle"></i>Low Priority Issues ({{ low_issues|length }})
+        </div>
+        {% for item in low_issues %}
+        {% include 'partials/issue_card.html' %}
+        {% endfor %}
+        {% endif %}
+
+        {% if passed %}
+        <div class="section-header sh-pass mt-3 passed-toggle" onclick="togglePassed()">
+          <i class="fa fa-check-circle"></i>Passed ({{ passed|length }})
+          <i class="fa fa-chevron-down ms-auto" id="passedChevron"></i>
+        </div>
+        <div id="passedList" style="display:none">
+          {% for item in passed %}
+          <div class="issue-card pass">
+            <div class="d-flex align-items-center gap-2 flex-wrap">
+              <div class="issue-title">{{ item.section }}</div>
+              <span class="issue-label il-pass">✓ Pass</span>
+              <span class="issue-label il-{{ item.priority|lower }}">{{ item.priority }}</span>
+            </div>
+            {% if item.lease_says %}
+            <div class="mt-2 detail-val" style="color:#6b7280;font-size:.83rem">{{ item.lease_says }}</div>
+            {% endif %}
+          </div>
+          {% endfor %}
+        </div>
+        {% endif %}
+
+        {% if not high_issues and not medium_issues and not low_issues %}
+        <div class="text-center py-5 text-muted">
+          <i class="fa fa-check-circle fa-3x mb-3" style="color:#22c55e"></i>
+          <div class="fw-semibold">No issues found!</div>
+          <div class="small">This lease meets all VIP Medical Group standards.</div>
+        </div>
+        {% endif %}
+
+      </div><!-- end #view-checklist -->
+
+      <!-- ── VIEW: APPEARANCE IN LEASE ────────────────────────────────── -->
+      <div id="view-lease" style="display:none">
+        {% set all_issues = high_issues + medium_issues + low_issues %}
+        {% set lease_sorted = all_issues | sort(attribute='lease_position') %}
+
+        {% if lease_sorted %}
+        <div class="section-header" style="background:#f1f5f9;color:#475569">
+          <i class="fa fa-file-lines"></i>All Issues — Lease Order ({{ lease_sorted|length }})
+        </div>
+        {% for item in lease_sorted %}
+        {% include 'partials/issue_card.html' %}
+        {% endfor %}
+        {% else %}
+        <div class="text-center py-5 text-muted">
+          <i class="fa fa-check-circle fa-3x mb-3" style="color:#22c55e"></i>
+          <div class="fw-semibold">No issues found!</div>
+        </div>
+        {% endif %}
+
+        {% if passed %}
+        <div class="section-header sh-pass mt-3 passed-toggle" onclick="togglePassedLease()">
+          <i class="fa fa-check-circle"></i>Passed ({{ passed|length }})
+          <i class="fa fa-chevron-down ms-auto" id="passedChevronLease"></i>
+        </div>
+        <div id="passedListLease" style="display:none">
+          {% for item in passed %}
+          <div class="issue-card pass">
+            <div class="d-flex align-items-center gap-2 flex-wrap">
+              <div class="issue-title">{{ item.section }}</div>
+              <span class="issue-label il-pass">✓ Pass</span>
+              <span class="issue-label il-{{ item.priority|lower }}">{{ item.priority }}</span>
+            </div>
+            {% if item.lease_says %}
+            <div class="mt-2 detail-val" style="color:#6b7280;font-size:.83rem">{{ item.lease_says }}</div>
+            {% endif %}
+          </div>
+          {% endfor %}
+        </div>
+        {% endif %}
+
+      </div><!-- end #view-lease -->
 
     </div>
   </div>
 </div>
 
 <script>
+function applySort() {
+  const mode = document.getElementById("sortMode").value;
+  document.getElementById("view-checklist").style.display = mode === "checklist" ? "" : "none";
+  document.getElementById("view-lease").style.display     = mode === "lease"      ? "" : "none";
+}
 function togglePassed() {
   const list = document.getElementById("passedList");
   const icon = document.getElementById("passedChevron");
+  const showing = list.style.display !== "none";
+  list.style.display = showing ? "none" : "";
+  icon.className = showing ? "fa fa-chevron-down ms-auto" : "fa fa-chevron-up ms-auto";
+}
+function togglePassedLease() {
+  const list = document.getElementById("passedListLease");
+  const icon = document.getElementById("passedChevronLease");
   const showing = list.style.display !== "none";
   list.style.display = showing ? "none" : "";
   icon.className = showing ? "fa fa-chevron-down ms-auto" : "fa fa-chevron-up ms-auto";
