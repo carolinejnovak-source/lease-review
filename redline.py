@@ -277,6 +277,48 @@ def apply_redlines(input_path: str, redlines: list, output_path: str,
                     section_positions[sec] = para_idx
                 break
 
+    # ── Keyword fallback: approximate positions for still-unpositioned sections ─
+    # For sections still at 999999 after the redline find-text scan, we try three
+    # increasingly relaxed searches against the ORIGINAL document:
+    #   1. lease_says text (most specific — the actual lease wording)
+    #   2. All section-name keywords together
+    #   3. The single longest section-name keyword
+    # No confidence gate here — an approximate position beats 999999.
+    issue_lease_says = {i.get("section", ""): (i.get("lease_says") or "").strip().lower()
+                        for i in (issues or []) if i.get("lease_says")}
+    all_section_names = set(r.get("section", "") for r in redlines) | \
+                        set(i.get("section", "") for i in (issues or []))
+    for sec in all_section_names:
+        if not sec or sec in section_positions:
+            continue   # already positioned
+        kws = [w for w in sec.lower().split() if len(w) > 3]
+
+        # Pass 1: lease_says text
+        lease_says_text = issue_lease_says.get(sec, "")
+        if lease_says_text and len(lease_says_text) > 4:
+            for para_idx, para in enumerate(doc.paragraphs):
+                if lease_says_text[:40] in para.text.lower():
+                    section_positions[sec] = para_idx
+                    break
+
+        if sec in section_positions:
+            continue
+
+        # Pass 2: all keywords
+        if kws:
+            for para_idx, para in enumerate(doc.paragraphs):
+                if all(kw in para.text.lower() for kw in kws):
+                    section_positions[sec] = para_idx
+                    break
+
+        # Pass 3: longest single keyword
+        if sec not in section_positions and kws:
+            best_kw = max(kws, key=len)
+            for para_idx, para in enumerate(doc.paragraphs):
+                if best_kw in para.text.lower():
+                    section_positions[sec] = para_idx
+                    break
+
     # ── Step 1: Apply redlines ────────────────────────────────────────────────
     for redline in redlines:
         find    = (redline.get("find") or "").strip()
