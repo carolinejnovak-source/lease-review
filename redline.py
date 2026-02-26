@@ -278,46 +278,70 @@ def apply_redlines(input_path: str, redlines: list, output_path: str,
                 break
 
     # ── Keyword fallback: approximate positions for still-unpositioned sections ─
-    # For sections still at 999999 after the redline find-text scan, we try three
-    # increasingly relaxed searches against the ORIGINAL document:
-    #   1. lease_says text (most specific — the actual lease wording)
-    #   2. All section-name keywords together
-    #   3. The single longest section-name keyword
-    # No confidence gate here — an approximate position beats 999999.
-    issue_lease_says = {i.get("section", ""): (i.get("lease_says") or "").strip().lower()
-                        for i in (issues or []) if i.get("lease_says")}
+    # Build a ranked list of candidate search strings for each section, then
+    # try them in order against the original document.  Multiple passes with
+    # decreasing specificity so we always find something better than 999999.
+    import re as _re
+
+    # Collect redline find-texts per section (most reliable — verbatim lease text)
+    section_find_texts: dict = {}
+    for r in redlines:
+        sec = r.get("section", "")
+        find = (r.get("find") or "").strip()
+        if sec and find:
+            section_find_texts.setdefault(sec, []).append(find.lower())
+
+    # Collect lease_says snippets + quoted substrings per section
+    section_lease_says: dict = {}
+    for item in (issues or []):
+        sec = item.get("section", "")
+        ls  = (item.get("lease_says") or "").strip()
+        if not sec or not ls:
+            continue
+        snippets = [ls[:60].lower()]
+        # Extract anything in single/double/curly quotes (e.g. 'VIP Medical Group')
+        quoted = _re.findall(r"['\u2018\u2019\u201c\u201d\"]([^'\"]{4,60})['\u2018\u2019\u201c\u201d\"]", ls)
+        snippets += [q.lower() for q in quoted if len(q) > 4]
+        section_lease_says[sec] = snippets
+
     all_section_names = set(r.get("section", "") for r in redlines) | \
                         set(i.get("section", "") for i in (issues or []))
+
     for sec in all_section_names:
         if not sec or sec in section_positions:
-            continue   # already positioned
+            continue   # already positioned by find-text pre-scan
+
         kws = [w for w in sec.lower().split() if len(w) > 3]
 
-        # Pass 1: lease_says text
-        lease_says_text = issue_lease_says.get(sec, "")
-        if lease_says_text and len(lease_says_text) > 4:
-            for para_idx, para in enumerate(doc.paragraphs):
-                if lease_says_text[:40] in para.text.lower():
-                    section_positions[sec] = para_idx
-                    break
+        def _first_match(candidates):
+            for cand in candidates:
+                if not cand or len(cand) < 4:
+                    continue
+                for pi, para in enumerate(doc.paragraphs):
+                    if cand in para.text.lower():
+                        return pi
+            return None
 
-        if sec in section_positions:
-            continue
+        # Pass 1: redline find-text (verbatim lease text, highest accuracy)
+        pos = _first_match(section_find_texts.get(sec, []))
 
-        # Pass 2: all keywords
-        if kws:
-            for para_idx, para in enumerate(doc.paragraphs):
+        # Pass 2: lease_says snippets + quoted substrings
+        if pos is None:
+            pos = _first_match(section_lease_says.get(sec, []))
+
+        # Pass 3: all section-name keywords in same paragraph
+        if pos is None and kws:
+            for pi, para in enumerate(doc.paragraphs):
                 if all(kw in para.text.lower() for kw in kws):
-                    section_positions[sec] = para_idx
+                    pos = pi
                     break
 
-        # Pass 3: longest single keyword
-        if sec not in section_positions and kws:
-            best_kw = max(kws, key=len)
-            for para_idx, para in enumerate(doc.paragraphs):
-                if best_kw in para.text.lower():
-                    section_positions[sec] = para_idx
-                    break
+        # Pass 4: longest single keyword
+        if pos is None and kws:
+            pos = _first_match([max(kws, key=len)])
+
+        if pos is not None:
+            section_positions[sec] = pos
 
     # ── Step 1: Apply redlines ────────────────────────────────────────────────
     for redline in redlines:
