@@ -192,16 +192,11 @@ def _insert_comment_annotation(doc, section_name, issue_text, vip_standard="") -
     r.append(t)
     comment_para.append(r)
 
-    # Insert after target paragraph, or prepend to body
+    # Insert after target paragraph; if no match found, append to end of document
     if target_para is not None:
         target_para._p.addnext(comment_para)
     else:
-        body = doc.element.body
-        first_para = body.find(qn('w:p'))
-        if first_para is not None:
-            first_para.addprevious(comment_para)
-        else:
-            body.append(comment_para)
+        doc.element.body.append(comment_para)
 
     return target_para_idx
 
