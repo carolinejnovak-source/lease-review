@@ -348,35 +348,40 @@ def apply_redlines(input_path: str, redlines: list, output_path: str,
     doc.save(output_path)
 
     # ── Final re-scan: true document order from the saved file ───────────────
-    # Comment insertions (addprevious) shift subsequent paragraph indices, so
-    # original-doc para_idx values are unreliable for sort order.
-    # We re-open the saved file and scan top-to-bottom:
-    #   • Comment paragraphs contain "⚑ VIP LEGAL REVIEW — SECTIONNAME:"
-    #     → parse section name directly from the text
-    #   • Redline paragraphs contain w:delText elements whose text matches
-    #     the find_to_section map we built during application
-    # The first (lowest) para_idx found for each section wins.
+    # Comment insertions (addprevious) shift paragraph indices, so we re-open
+    # the saved file and read the actual positions of every annotation/redline.
     try:
+        import sys
         final_doc = Document(output_path)
-        final_positions = {}   # fresh dict — scan order = true doc order
+        final_positions = {}   # fresh — scan order = true document order
+
+        MARKER = '\u2691 VIP LEGAL REVIEW \u2014 '
+
+        # Build a lowercase lookup: section_name.upper() -> original section name
+        # so we can match "ESTOPPEL CERTIFICATES - SECTION 15.3" → "Estoppel Certificates"
+        sec_upper_map = {s.upper(): s for s in section_actions}
 
         for para_idx, para in enumerate(final_doc.paragraphs):
-            para_text = para.text  # reads all w:t in the paragraph
+            para_text = para.text  # concatenates all w:t runs
 
-            # 1. Comment marker — format: "⚑ VIP LEGAL REVIEW — SECTIONNAME: …"
-            MARKER = '\u2691 VIP LEGAL REVIEW \u2014 '
+            # 1. Comment markers — "⚑ VIP LEGAL REVIEW — SECTIONNAME: …"
+            #    Section names may have suffixes like " - SECTION 15.3"; use
+            #    startswith matching against every known section.
             if MARKER in para_text:
                 after = para_text[para_text.index(MARKER) + len(MARKER):]
                 if ':' in after:
-                    sec_upper = after[:after.index(':')].strip()
-                    # Match against known sections (case-insensitive)
-                    for sec in section_actions:
-                        if sec.upper() == sec_upper:
-                            if para_idx < final_positions.get(sec, 999999):
-                                final_positions[sec] = para_idx
-                            break
+                    raw = after[:after.index(':')].strip().upper()
+                    # Exact match first, then startswith
+                    matched_sec = sec_upper_map.get(raw)
+                    if matched_sec is None:
+                        for known_upper, known_sec in sec_upper_map.items():
+                            if raw.startswith(known_upper):
+                                matched_sec = known_sec
+                                break
+                    if matched_sec and para_idx < final_positions.get(matched_sec, 999999):
+                        final_positions[matched_sec] = para_idx
 
-            # 2. Redline paragraph — check w:delText elements
+            # 2. Redline paragraphs — check w:delText (tracked deletions)
             del_texts = [
                 el.text or '' for el in para._p.iter()
                 if el.tag == qn('w:delText')
@@ -389,15 +394,16 @@ def apply_redlines(input_path: str, redlines: list, output_path: str,
                             final_positions[sec] = para_idx
                         break
 
-        # Merge: final_positions takes priority; fall back to section_positions
-        # for any section the re-scan didn't find (e.g. ins-only redlines)
+        # Merge: final_positions wins; fall back to original for anything missed
         for sec, pos in section_positions.items():
             if sec not in final_positions:
                 final_positions[sec] = pos
         section_positions = final_positions
+        print(f"[rescan] positions: {sorted(section_positions.items(), key=lambda x:x[1])[:8]}", file=sys.stderr)
 
     except Exception as e:
-        pass  # Keep original section_positions if re-scan fails
+        import sys, traceback
+        print(f"[rescan ERROR] {e}\n{traceback.format_exc()}", file=sys.stderr)
 
     return {
         "applied": applied,
