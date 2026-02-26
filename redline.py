@@ -230,7 +230,14 @@ def apply_redlines(input_path: str, redlines: list, output_path: str,
     change_id = 1
     applied = 0
     comments = 0
-    section_actions = {}   # section -> "redline" | "comment"
+    section_actions = {}   # section -> "redline" | "comment" | "both"
+
+    def _record_action(sec, action):
+        existing = section_actions.get(sec)
+        if existing is None:
+            section_actions[sec] = action
+        elif existing != action:
+            section_actions[sec] = "both"   # both redline + comment applied
     section_positions = {} # section -> paragraph index in document (for lease-order sort)
 
     # Index issues by section for quick lookup
@@ -277,7 +284,7 @@ def apply_redlines(input_path: str, redlines: list, output_path: str,
             if ok:
                 found = True
                 applied += 1
-                section_actions[section] = "redline"
+                _record_action(section, "redline")
                 section_positions[section] = para_idx
                 break
 
@@ -291,7 +298,7 @@ def apply_redlines(input_path: str, redlines: list, output_path: str,
                             if ok:
                                 found = True
                                 applied += 1
-                                section_actions[section] = "redline"
+                                _record_action(section, "redline")
                                 # Tables don't have a simple global para_idx; use 999998
                                 section_positions[section] = 999998
                                 break
@@ -300,16 +307,17 @@ def apply_redlines(input_path: str, redlines: list, output_path: str,
                 if found: break
 
         # Text not found → fall back to comment annotation
-        if not found and section not in section_actions:
+        if not found and section_actions.get(section) not in ("redline", "both"):
             issue_obj  = issues_by_section.get(section, {})
             issue_text = issue_obj.get('issue') or reason or "Review required per VIP standards"
             vip_std    = issue_obj.get('vip_standard') or ""
             para_idx = _insert_comment_annotation(doc, section, issue_text, vip_std)
-            section_actions[section] = "comment"
-            section_positions[section] = para_idx
+            _record_action(section, "comment")
+            if section not in section_positions:
+                section_positions[section] = para_idx
             comments += 1
 
-    # ── Step 2: Comments for High/Medium issues without any redline ───────────
+    # ── Step 2: Comments for High/Medium issues with no comment yet ───────────
     if issues:
         for issue in issues:
             sec      = issue.get('section', '')
@@ -318,14 +326,16 @@ def apply_redlines(input_path: str, redlines: list, output_path: str,
 
             if status == 'pass' or priority not in ('High', 'Medium'):
                 continue
-            if sec in section_actions:
-                continue  # Already handled
+            # Skip if we already inserted a comment for this section
+            if section_actions.get(sec) in ("comment", "both"):
+                continue
 
             issue_text = issue.get('issue') or 'Review required per VIP standards'
             vip_std    = issue.get('vip_standard') or ''
             para_idx = _insert_comment_annotation(doc, sec, issue_text, vip_std)
-            section_actions[sec] = "comment"
-            section_positions[sec] = para_idx
+            _record_action(sec, "comment")
+            if sec not in section_positions:
+                section_positions[sec] = para_idx
             comments += 1
 
     doc.save(output_path)

@@ -4,7 +4,10 @@
   <div class="d-flex align-items-start justify-content-between flex-wrap gap-2 mb-2">
     <div class="d-flex align-items-center gap-2 flex-wrap">
       <div class="issue-title">{{ item.section }}</div>
-      {% if item.action_taken == 'redline' %}
+      {% if item.action_taken == 'both' %}
+        <span class="action-badge badge-redline">Redline Applied</span>
+        <span class="action-badge badge-comment">Comment Applied</span>
+      {% elif item.action_taken == 'redline' %}
         <span class="action-badge badge-redline">Redline Applied</span>
       {% elif item.action_taken == 'comment' %}
         <span class="action-badge badge-comment">Comment Applied</span>
