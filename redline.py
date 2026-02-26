@@ -240,6 +240,25 @@ def apply_redlines(input_path: str, redlines: list, output_path: str,
         if sec:
             issues_by_section[sec] = item
 
+    # ── Pre-scan: build keyword positions for ALL checklist sections ──────────
+    # Scan every paragraph once to find where each section topic appears in
+    # the lease — used for the "Appearance in Lease" sort on the results page.
+    all_paras_text = [(i, p.text) for i, p in enumerate(doc.paragraphs) if p.text.strip()]
+    all_sections = [item.get("section", "") for item in (issues or [])] + \
+                   [r.get("section", "") for r in (redlines or [])]
+    for sec in set(all_sections):
+        if not sec or sec in section_positions:
+            continue
+        kws = [w for w in sec.lower().split() if len(w) > 3]
+        if not kws:
+            continue
+        for para_idx, para_text in all_paras_text:
+            t = para_text.lower()
+            match = all(kw in t for kw in kws) if len(kws) > 1 else (kws[0] in t and len(para_text.strip()) <= 300)
+            if match:
+                section_positions[sec] = para_idx
+                break
+
     # ── Step 1: Apply redlines ────────────────────────────────────────────────
     for redline in redlines:
         find    = (redline.get("find") or "").strip()

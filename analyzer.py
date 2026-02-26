@@ -83,6 +83,7 @@ Return a single JSON object with this exact structure:
 - Skip redline entry entirely if the clause is MISSING from the lease (nothing to replace)
 - Maximum 20 redlines — High and Medium priority only
 - If VIP standard is a range → no redline, system inserts comment instead
+- ENTITY NAME: If the tenant entity name is wrong (not "National VIP Centers Management LLC"), you MUST generate a redline. The "find" field must be the EXACT wrong entity name as it appears verbatim in the lease (e.g. "VIP Medical Group"). The "replace" field must be "National VIP Centers Management LLC". Generate one redline per distinct wrong name found.
 {loi_rules}"""
 
 
