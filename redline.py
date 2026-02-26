@@ -273,8 +273,8 @@ def apply_redlines(input_path: str, redlines: list, output_path: str,
             continue
         find_norm = re.sub(r'\s+', ' ', find_text).strip()
         for para_idx, para in enumerate(doc.paragraphs):
-            para_norm = re.sub(r'\s+', ' ', para.text.lower())
-            if find_norm in para_norm:
+            para_full = re.sub(r'\s+', ' ', ''.join(para._p.itertext()).lower())
+            if find_norm in para_full:
                 if para_idx < section_positions.get(sec, 999999):
                     section_positions[sec] = para_idx
                 break
@@ -315,16 +315,17 @@ def apply_redlines(input_path: str, redlines: list, output_path: str,
 
         kws = [w for w in sec.lower().split() if len(w) > 3]
 
+        def _para_full_text(para):
+            """All text in a paragraph including hyperlinks, bookmarks, etc."""
+            return re.sub(r'\s+', ' ', ''.join(para._p.itertext()).lower())
+
         def _first_match(candidates):
             for cand in candidates:
                 if not cand or len(cand) < 4:
                     continue
-                # Normalize whitespace in both strings — Word docs use
-                # non-breaking spaces (U+00A0) that break plain 'in' checks.
                 cand_norm = re.sub(r'\s+', ' ', cand.lower()).strip()
                 for pi, para in enumerate(doc.paragraphs):
-                    para_norm = re.sub(r'\s+', ' ', para.text.lower())
-                    if cand_norm in para_norm:
+                    if cand_norm in _para_full_text(para):
                         return pi
             return None
 
