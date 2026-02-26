@@ -301,11 +301,16 @@ def _run_analysis(job_id, input_path, original_filename, loi_path=None):
         # Enrich each review item with action_taken (badge) and lease_position (sort order)
         section_actions    = redline_summary.get("section_actions", {})
         section_positions  = redline_summary.get("section_positions", {})
+        import sys as _sys
+        _sys.stderr.write(f"[positions] {sorted(section_positions.items(), key=lambda x:x[1])[:12]}\n")
         for idx, item in enumerate(result.get("review", [])):
             sec = item.get("section")
+            pos = section_positions.get(sec, 999999)
             item["action_taken"]    = section_actions.get(sec)
-            item["lease_position"]  = section_positions.get(sec, 999999)
+            item["lease_position"]  = pos
             item["checklist_index"] = idx
+            if pos < 50:
+                _sys.stderr.write(f"[pos-early] sec={sec!r} pos={pos}\n")
 
         with JOBS_LOCK:
             JOBS[job_id].update({
@@ -410,6 +415,35 @@ def results(job_id):
         redline_summary=result.get("redline_summary", {}),
         original_filename=job["original_filename"],
     )
+
+
+@app.route("/debug/<job_id>")
+@login_required
+def debug_job(job_id):
+    """Temporary debug: show section_positions and review section names for a job."""
+    import json as _json
+    with JOBS_LOCK:
+        job = JOBS.get(job_id)
+    if not job:
+        job = _load_job_from_disk(job_id)
+    if not job:
+        return "job not found", 404
+    result = job.get("result", {})
+    positions = result.get("redline_summary", {}).get("section_positions", {})
+    review = result.get("review", [])
+    rows = []
+    for item in review:
+        sec = item.get("section", "")
+        rows.append({
+            "section": sec,
+            "status": item.get("status"),
+            "priority": item.get("priority"),
+            "lease_position": item.get("lease_position", "NOT SET"),
+            "in_positions": sec in positions,
+            "positions_value": positions.get(sec, "MISSING"),
+        })
+    rows.sort(key=lambda x: x["lease_position"] if isinstance(x["lease_position"], int) else 999999)
+    return "<pre>" + _json.dumps(rows, indent=2) + "</pre>"
 
 
 @app.route("/download/<job_id>")
