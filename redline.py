@@ -121,53 +121,66 @@ def _apply_to_para(para, find_text, replace_text, change_id):
 
 # ── Comment annotation ────────────────────────────────────────────────────────
 
+def _comment_confidence(para_text: str, section_name: str, keywords: list) -> float:
+    """
+    Score 0.0–1.0: how confident are we that this paragraph is the right
+    anchor for a comment about `section_name`?
+
+    Components:
+      +0.40  section name (or most of it) appears verbatim in the paragraph
+      +0.30  ALL keywords present
+      +0.10  any keyword present (if not all)
+      +0.30  paragraph is heading-like (≤ 80 chars)
+      +0.15  paragraph is short (≤ 160 chars)
+    """
+    t = para_text.lower().strip()
+    sn = section_name.lower()
+    score = 0.0
+
+    if sn in t:
+        score += 0.40
+    if keywords and all(kw in t for kw in keywords):
+        score += 0.30
+    elif keywords and any(kw in t for kw in keywords):
+        score += 0.10
+
+    length = len(para_text.strip())
+    if length <= 80:
+        score += 0.30
+    elif length <= 160:
+        score += 0.15
+
+    return min(score, 1.0)
+
+
+CONFIDENCE_THRESHOLD = 0.80   # below this → append to end of document
+
+
 def _insert_comment_annotation(doc, section_name, issue_text, vip_standard="") -> int:
     """
-    Insert a visually distinctive yellow-highlighted comment annotation
-    near the relevant section of the document.
-    Returns the paragraph index (0-based) where the annotation was anchored,
-    or 999999 if no anchor was found.
+    Insert a yellow-highlighted VIP LEGAL REVIEW annotation.
+
+    Strategy:
+      - Score every paragraph for how likely it is to be the right anchor.
+      - If best score ≥ CONFIDENCE_THRESHOLD → insert ABOVE that paragraph.
+      - If best score < CONFIDENCE_THRESHOLD → append to bottom of document.
+
+    Returns the paragraph index used (or 999999 when appended to bottom).
     """
-    # Find the best paragraph: keywords from section name
-    target_para = None
-    target_para_idx = 999999
     keywords = [w for w in section_name.lower().split() if len(w) > 3]
 
-    def _is_good_anchor(text, kws):
-        """
-        Require ALL keywords to appear in the paragraph (not just one),
-        or the paragraph text closely matches the section name.
-        Single-keyword sections also require the paragraph to look like
-        a heading (short text, ≤ 120 chars) to avoid weak body-text hits.
-        """
-        t = text.lower()
-        if not kws:
-            return False
-        if len(kws) > 1:
-            return all(kw in t for kw in kws)
-        # Single keyword: only match heading-like paragraphs (short lines)
-        return kws[0] in t and len(text.strip()) <= 120
+    best_para      = None
+    best_para_idx  = 999999
+    best_score     = 0.0
 
     for para_idx, para in enumerate(doc.paragraphs):
         if not para.text.strip():
             continue
-        if _is_good_anchor(para.text, keywords):
-            target_para = para
-            target_para_idx = para_idx
-            break
-
-    # Also search tables if not found
-    if target_para is None:
-        for table in doc.tables:
-            for row in table.rows:
-                for cell in row.cells:
-                    for para in cell.paragraphs:
-                        if _is_good_anchor(para.text, keywords):
-                            target_para = para
-                            break
-                    if target_para: break
-                if target_para: break
-            if target_para: break
+        score = _comment_confidence(para.text, section_name, keywords)
+        if score > best_score:
+            best_score    = score
+            best_para     = para
+            best_para_idx = para_idx
 
     # Build the comment paragraph element
     comment_para = OxmlElement('w:p')
@@ -205,13 +218,14 @@ def _insert_comment_annotation(doc, section_name, issue_text, vip_standard="") -
     r.append(t)
     comment_para.append(r)
 
-    # Insert after target paragraph; if no match found, append to end of document
-    if target_para is not None:
-        target_para._p.addnext(comment_para)
+    # High confidence → insert ABOVE the found paragraph
+    # Low confidence  → append to bottom of document
+    if best_score >= CONFIDENCE_THRESHOLD and best_para is not None:
+        best_para._p.addprevious(comment_para)
+        return best_para_idx
     else:
         doc.element.body.append(comment_para)
-
-    return target_para_idx
+        return 999999
 
 
 # ── Public API ───────────────────────────────────────────────────────────────
@@ -247,24 +261,8 @@ def apply_redlines(input_path: str, redlines: list, output_path: str,
         if sec:
             issues_by_section[sec] = item
 
-    # ── Pre-scan: build keyword positions for ALL checklist sections ──────────
-    # Scan every paragraph once to find where each section topic appears in
-    # the lease — used for the "Appearance in Lease" sort on the results page.
-    all_paras_text = [(i, p.text) for i, p in enumerate(doc.paragraphs) if p.text.strip()]
-    all_sections = [item.get("section", "") for item in (issues or [])] + \
-                   [r.get("section", "") for r in (redlines or [])]
-    for sec in set(all_sections):
-        if not sec or sec in section_positions:
-            continue
-        kws = [w for w in sec.lower().split() if len(w) > 3]
-        if not kws:
-            continue
-        for para_idx, para_text in all_paras_text:
-            t = para_text.lower()
-            match = all(kw in t for kw in kws) if len(kws) > 1 else (kws[0] in t and len(para_text.strip()) <= 300)
-            if match:
-                section_positions[sec] = para_idx
-                break
+    # (Positions are built during redline/comment application below.
+    #  A post-apply gap-fill runs at the end for any remaining sections.)
 
     # ── Step 1: Apply redlines ────────────────────────────────────────────────
     for redline in redlines:
@@ -313,8 +311,7 @@ def apply_redlines(input_path: str, redlines: list, output_path: str,
             vip_std    = issue_obj.get('vip_standard') or ""
             para_idx = _insert_comment_annotation(doc, section, issue_text, vip_std)
             _record_action(section, "comment")
-            if section not in section_positions:
-                section_positions[section] = para_idx
+            section_positions[section] = para_idx   # always use actual anchor position
             comments += 1
 
     # ── Step 2: Comments for High/Medium issues with no comment yet ───────────
@@ -334,9 +331,24 @@ def apply_redlines(input_path: str, redlines: list, output_path: str,
             vip_std    = issue.get('vip_standard') or ''
             para_idx = _insert_comment_annotation(doc, sec, issue_text, vip_std)
             _record_action(sec, "comment")
-            if sec not in section_positions:
-                section_positions[sec] = para_idx
+            section_positions[sec] = para_idx   # always use actual anchor position
             comments += 1
+
+    # ── Post-apply gap-fill: keyword scan for sections still unpositioned ─────
+    # Only fills sections with no redline or comment (e.g. passing items).
+    # Uses the confidence scorer so weak matches don't pollute the sort.
+    all_paras_text = [(i, p.text) for i, p in enumerate(doc.paragraphs) if p.text.strip()]
+    for sec in set(item.get("section", "") for item in (issues or [])):
+        if not sec or sec in section_positions:
+            continue
+        kws = [w for w in sec.lower().split() if len(w) > 3]
+        best_score, best_idx = 0.0, 999999
+        for para_idx, para_text in all_paras_text:
+            score = _comment_confidence(para_text, sec, kws)
+            if score > best_score:
+                best_score, best_idx = score, para_idx
+        if best_score >= CONFIDENCE_THRESHOLD:
+            section_positions[sec] = best_idx
 
     doc.save(output_path)
     return {
