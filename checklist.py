@@ -3,6 +3,7 @@ VIP Medical Group lease checklist — all 60+ items embedded for GPT-4 prompts.
 """
 
 CHECKLIST_ITEMS = [
+    {"section": "Entity Name", "what_to_look_for": "Legal entity name used as Tenant throughout the lease", "vip_standard": "Tenant must be identified as 'National VIP Centers Management LLC'", "red_flag": "Any other entity name used (e.g., 'VIP Medical Group', 'Dr. Caroline Novak', individual name, or any other variation)", "priority": "High"},
     {"section": "Commencement Date", "what_to_look_for": "Trigger methodology", "vip_standard": "Commencement upon Substantial Completion (SC)", "red_flag": "Commencement BEFORE SC", "priority": "High"},
     {"section": "Rent Commencement", "what_to_look_for": "When rent begins", "vip_standard": "Rent begins AFTER SC + abatement period", "red_flag": "Rent due before SC", "priority": "High"},
     {"section": "Substantial Completion Definition", "what_to_look_for": "Detailed SC definition", "vip_standard": "SC = all LL work complete except punch list", "red_flag": "SC includes unfinished major items", "priority": "High"},
@@ -72,6 +73,7 @@ CHECKLIST_ITEMS = [
 ]
 
 DEAL_SUMMARY_FIELDS = [
+    {"field": "Tenant Entity Name", "vip_standard": "National VIP Centers Management LLC"},
     {"field": "RSF", "vip_standard": "Fixed at lease execution"},
     {"field": "Base Rent (Year 1)", "vip_standard": "Market appropriate / consistent with comps"},
     {"field": "Annual Escalation", "vip_standard": "3% standard"},
