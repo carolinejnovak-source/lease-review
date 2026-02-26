@@ -315,7 +315,9 @@ def apply_redlines(input_path: str, redlines: list, output_path: str,
             vip_std    = issue_obj.get('vip_standard') or ""
             para_idx = _insert_comment_annotation(doc, section, issue_text, vip_std)
             _record_action(section, "comment")
-            section_positions[section] = para_idx   # always use actual anchor position
+            # Keep earliest position — never overwrite a lower (earlier) value
+            if para_idx < section_positions.get(section, 999999):
+                section_positions[section] = para_idx
             comments += 1
 
     # ── Step 2: Comments for High/Medium issues with no comment yet ───────────
@@ -335,7 +337,9 @@ def apply_redlines(input_path: str, redlines: list, output_path: str,
             vip_std    = issue.get('vip_standard') or ''
             para_idx = _insert_comment_annotation(doc, sec, issue_text, vip_std)
             _record_action(sec, "comment")
-            section_positions[sec] = para_idx   # always use actual anchor position
+            # Keep earliest position — never overwrite a lower (earlier) value
+            if para_idx < section_positions.get(sec, 999999):
+                section_positions[sec] = para_idx
             comments += 1
 
     # (Passing items have no redline/comment, so no position needed —
