@@ -441,6 +441,8 @@ def debug_job(job_id):
             "lease_position": item.get("lease_position", "NOT SET"),
             "in_positions": sec in positions,
             "positions_value": positions.get(sec, "MISSING"),
+            "lease_says": item.get("lease_says", ""),
+            "action_taken": item.get("action_taken", ""),
         })
     rows.sort(key=lambda x: x["lease_position"] if isinstance(x["lease_position"], int) else 999999)
     return "<pre>" + _json.dumps(rows, indent=2) + "</pre>"

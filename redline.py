@@ -271,8 +271,10 @@ def apply_redlines(input_path: str, redlines: list, output_path: str,
         sec       = redline_item.get("section", "")
         if not find_text or not sec:
             continue
+        find_norm = re.sub(r'\s+', ' ', find_text).strip()
         for para_idx, para in enumerate(doc.paragraphs):
-            if find_text in para.text.lower():
+            para_norm = re.sub(r'\s+', ' ', para.text.lower())
+            if find_norm in para_norm:
                 if para_idx < section_positions.get(sec, 999999):
                     section_positions[sec] = para_idx
                 break
@@ -317,8 +319,12 @@ def apply_redlines(input_path: str, redlines: list, output_path: str,
             for cand in candidates:
                 if not cand or len(cand) < 4:
                     continue
+                # Normalize whitespace in both strings — Word docs use
+                # non-breaking spaces (U+00A0) that break plain 'in' checks.
+                cand_norm = re.sub(r'\s+', ' ', cand.lower()).strip()
                 for pi, para in enumerate(doc.paragraphs):
-                    if cand in para.text.lower():
+                    para_norm = re.sub(r'\s+', ' ', para.text.lower())
+                    if cand_norm in para_norm:
                         return pi
             return None
 
