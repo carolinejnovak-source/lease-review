@@ -245,6 +245,7 @@ def apply_redlines(input_path: str, redlines: list, output_path: str,
     applied = 0
     comments = 0
     section_actions = {}   # section -> "redline" | "comment" | "both"
+    find_to_section = {}  # find_text (lowered) -> section name, for post-scan
 
     def _record_action(sec, action):
         existing = section_actions.get(sec)
@@ -273,6 +274,9 @@ def apply_redlines(input_path: str, redlines: list, output_path: str,
 
         if not find or not replace or find == replace:
             continue
+
+        if section and find:
+            find_to_section[find.lower()[:80]] = section  # for post-scan mapping
 
         found = False
 
@@ -334,23 +338,41 @@ def apply_redlines(input_path: str, redlines: list, output_path: str,
             section_positions[sec] = para_idx   # always use actual anchor position
             comments += 1
 
-    # ── Post-apply gap-fill: keyword scan for sections still unpositioned ─────
-    # Only fills sections with no redline or comment (e.g. passing items).
-    # Uses the confidence scorer so weak matches don't pollute the sort.
-    all_paras_text = [(i, p.text) for i, p in enumerate(doc.paragraphs) if p.text.strip()]
-    for sec in set(item.get("section", "") for item in (issues or [])):
-        if not sec or sec in section_positions:
-            continue
-        kws = [w for w in sec.lower().split() if len(w) > 3]
-        best_score, best_idx = 0.0, 999999
-        for para_idx, para_text in all_paras_text:
-            score = _comment_confidence(para_text, sec, kws)
-            if score > best_score:
-                best_score, best_idx = score, para_idx
-        if best_score >= CONFIDENCE_THRESHOLD:
-            section_positions[sec] = best_idx
+    # (Passing items have no redline/comment, so no position needed —
+    #  they sort to the bottom of the lease-order view with position 999999.)
 
     doc.save(output_path)
+
+    # ── Final position scan: re-read saved doc to get true paragraph order ────
+    # Comment insertions shift paragraph indices, so we re-scan the SAVED
+    # document to find the actual position of every annotation and redline.
+    try:
+        final_doc = Document(output_path)
+        for para_idx, para in enumerate(final_doc.paragraphs):
+            para_text = para.text
+
+            # 1. Comment markers contain the section name verbatim
+            if '\u2756 VIP LEGAL REVIEW' in para_text or '⚑ VIP LEGAL REVIEW' in para_text:
+                for sec in section_actions:
+                    marker = f'VIP LEGAL REVIEW \u2014 {sec.upper()}:'
+                    if marker in para_text.upper():
+                        section_positions[sec] = para_idx
+                        break
+
+            # 2. Tracked changes: check if find-text appears in paragraph's full XML text
+            elif para._p.find(qn('w:del')) is not None:
+                # Extract all text from paragraph XML (incl. deleted runs)
+                full_text = ''.join(
+                    t.text or '' for t in para._p.iter()
+                    if t.tag == qn('w:t')
+                ).lower()
+                for find_key, sec in find_to_section.items():
+                    if find_key in full_text and section_positions.get(sec, 999999) > para_idx:
+                        section_positions[sec] = para_idx
+                        break
+    except Exception:
+        pass  # If re-scan fails, keep positions from application phase
+
     return {
         "applied": applied,
         "comments": comments,
