@@ -343,35 +343,14 @@ def apply_redlines(input_path: str, redlines: list, output_path: str,
 
     doc.save(output_path)
 
-    # ── Final position scan: re-read saved doc to get true paragraph order ────
-    # Comment insertions shift paragraph indices, so we re-scan the SAVED
-    # document to find the actual position of every annotation and redline.
-    try:
-        final_doc = Document(output_path)
-        for para_idx, para in enumerate(final_doc.paragraphs):
-            para_text = para.text
-
-            # 1. Comment markers contain the section name verbatim
-            if '\u2756 VIP LEGAL REVIEW' in para_text or '⚑ VIP LEGAL REVIEW' in para_text:
-                for sec in section_actions:
-                    marker = f'VIP LEGAL REVIEW \u2014 {sec.upper()}:'
-                    if marker in para_text.upper():
-                        section_positions[sec] = para_idx
-                        break
-
-            # 2. Tracked changes: check if find-text appears in paragraph's full XML text
-            elif para._p.find(qn('w:del')) is not None:
-                # Extract all text from paragraph XML (incl. deleted runs)
-                full_text = ''.join(
-                    t.text or '' for t in para._p.iter()
-                    if t.tag == qn('w:t')
-                ).lower()
-                for find_key, sec in find_to_section.items():
-                    if find_key in full_text and section_positions.get(sec, 999999) > para_idx:
-                        section_positions[sec] = para_idx
-                        break
-    except Exception:
-        pass  # If re-scan fails, keep positions from application phase
+    # NOTE: We do NOT re-scan the saved document because comment insertions
+    # (addprevious) shift paragraph indices in the final file, making re-scanned
+    # indices inconsistent with original-doc indices used for redline positions.
+    # Instead, section_positions already holds:
+    #   - redlines: original para_idx where find-text was found (no index shift)
+    #   - comments: original para_idx of the anchor paragraph (inserted above it)
+    #   - low-confidence comments: 999999 (sorts to bottom)
+    # All values share the same original-document reference frame → correct order.
 
     return {
         "applied": applied,
