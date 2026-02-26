@@ -448,9 +448,13 @@ def apply_redlines(input_path: str, redlines: list, output_path: str,
                             final_positions[sec] = para_idx
                         break
 
-        # Merge: final_positions wins; fall back to original for anything missed
+        # Merge: keep the EARLIEST (lowest) position from either source.
+        # section_positions holds pre-scan / application positions (original doc).
+        # final_positions holds re-scan positions (saved doc, shifted by insertions).
+        # Taking the minimum ensures a bottom-dump comment (pos ~460) never
+        # overrides a correct pre-scan position (pos 2) for the same section.
         for sec, pos in section_positions.items():
-            if sec not in final_positions:
+            if pos < final_positions.get(sec, 999999):
                 final_positions[sec] = pos
         section_positions = final_positions
         print(f"[rescan] positions: {sorted(section_positions.items(), key=lambda x:x[1])[:8]}", file=sys.stderr)
