@@ -347,14 +347,57 @@ def apply_redlines(input_path: str, redlines: list, output_path: str,
 
     doc.save(output_path)
 
-    # NOTE: We do NOT re-scan the saved document because comment insertions
-    # (addprevious) shift paragraph indices in the final file, making re-scanned
-    # indices inconsistent with original-doc indices used for redline positions.
-    # Instead, section_positions already holds:
-    #   - redlines: original para_idx where find-text was found (no index shift)
-    #   - comments: original para_idx of the anchor paragraph (inserted above it)
-    #   - low-confidence comments: 999999 (sorts to bottom)
-    # All values share the same original-document reference frame → correct order.
+    # ── Final re-scan: true document order from the saved file ───────────────
+    # Comment insertions (addprevious) shift subsequent paragraph indices, so
+    # original-doc para_idx values are unreliable for sort order.
+    # We re-open the saved file and scan top-to-bottom:
+    #   • Comment paragraphs contain "⚑ VIP LEGAL REVIEW — SECTIONNAME:"
+    #     → parse section name directly from the text
+    #   • Redline paragraphs contain w:delText elements whose text matches
+    #     the find_to_section map we built during application
+    # The first (lowest) para_idx found for each section wins.
+    try:
+        final_doc = Document(output_path)
+        final_positions = {}   # fresh dict — scan order = true doc order
+
+        for para_idx, para in enumerate(final_doc.paragraphs):
+            para_text = para.text  # reads all w:t in the paragraph
+
+            # 1. Comment marker — format: "⚑ VIP LEGAL REVIEW — SECTIONNAME: …"
+            MARKER = '\u2691 VIP LEGAL REVIEW \u2014 '
+            if MARKER in para_text:
+                after = para_text[para_text.index(MARKER) + len(MARKER):]
+                if ':' in after:
+                    sec_upper = after[:after.index(':')].strip()
+                    # Match against known sections (case-insensitive)
+                    for sec in section_actions:
+                        if sec.upper() == sec_upper:
+                            if para_idx < final_positions.get(sec, 999999):
+                                final_positions[sec] = para_idx
+                            break
+
+            # 2. Redline paragraph — check w:delText elements
+            del_texts = [
+                el.text or '' for el in para._p.iter()
+                if el.tag == qn('w:delText')
+            ]
+            if del_texts:
+                combined = ''.join(del_texts).lower()
+                for find_key, sec in find_to_section.items():
+                    if find_key in combined:
+                        if para_idx < final_positions.get(sec, 999999):
+                            final_positions[sec] = para_idx
+                        break
+
+        # Merge: final_positions takes priority; fall back to section_positions
+        # for any section the re-scan didn't find (e.g. ins-only redlines)
+        for sec, pos in section_positions.items():
+            if sec not in final_positions:
+                final_positions[sec] = pos
+        section_positions = final_positions
+
+    except Exception as e:
+        pass  # Keep original section_positions if re-scan fails
 
     return {
         "applied": applied,
