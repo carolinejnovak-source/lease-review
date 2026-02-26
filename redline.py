@@ -133,11 +133,25 @@ def _insert_comment_annotation(doc, section_name, issue_text, vip_standard="") -
     target_para_idx = 999999
     keywords = [w for w in section_name.lower().split() if len(w) > 3]
 
+    def _is_good_anchor(text, kws):
+        """
+        Require ALL keywords to appear in the paragraph (not just one),
+        or the paragraph text closely matches the section name.
+        Single-keyword sections also require the paragraph to look like
+        a heading (short text, ≤ 120 chars) to avoid weak body-text hits.
+        """
+        t = text.lower()
+        if not kws:
+            return False
+        if len(kws) > 1:
+            return all(kw in t for kw in kws)
+        # Single keyword: only match heading-like paragraphs (short lines)
+        return kws[0] in t and len(text.strip()) <= 120
+
     for para_idx, para in enumerate(doc.paragraphs):
         if not para.text.strip():
             continue
-        para_lower = para.text.lower()
-        if keywords and any(kw in para_lower for kw in keywords):
+        if _is_good_anchor(para.text, keywords):
             target_para = para
             target_para_idx = para_idx
             break
@@ -148,8 +162,7 @@ def _insert_comment_annotation(doc, section_name, issue_text, vip_standard="") -
             for row in table.rows:
                 for cell in row.cells:
                     for para in cell.paragraphs:
-                        para_lower = para.text.lower()
-                        if keywords and any(kw in para_lower for kw in keywords):
+                        if _is_good_anchor(para.text, keywords):
                             target_para = para
                             break
                     if target_para: break
