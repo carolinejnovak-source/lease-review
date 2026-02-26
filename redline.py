@@ -262,8 +262,20 @@ def apply_redlines(input_path: str, redlines: list, output_path: str,
         if sec:
             issues_by_section[sec] = item
 
-    # (Positions are built during redline/comment application below.
-    #  A post-apply gap-fill runs at the end for any remaining sections.)
+    # ── Pre-scan original doc: find-text positions (before any modifications) ─
+    # Lock in a position for every section that has a redline, based on where
+    # the find-text appears in the ORIGINAL document.  This gives accurate sort
+    # positions even when the redline application later fails (text mismatch).
+    for redline_item in redlines:
+        find_text = (redline_item.get("find") or "").strip().lower()
+        sec       = redline_item.get("section", "")
+        if not find_text or not sec:
+            continue
+        for para_idx, para in enumerate(doc.paragraphs):
+            if find_text in para.text.lower():
+                if para_idx < section_positions.get(sec, 999999):
+                    section_positions[sec] = para_idx
+                break
 
     # ── Step 1: Apply redlines ────────────────────────────────────────────────
     for redline in redlines:
