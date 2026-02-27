@@ -304,9 +304,19 @@ def _run_analysis(job_id, input_path, original_filename, loi_path=None):
         section_positions  = redline_summary.get("section_positions", {})
         import sys as _sys
         _sys.stderr.write(f"[positions] {sorted(section_positions.items(), key=lambda x:x[1])[:12]}\n")
+        NOT_PRESENT = {"not addressed", "not specified", "not addressed.", "not specified.",
+                       "not found", "silent", "not mentioned", "not discussed"}
+
         for idx, item in enumerate(result.get("review", [])):
-            sec = item.get("section")
-            pos = section_positions.get(sec, 999999)
+            sec        = item.get("section")
+            lease_says = (item.get("lease_says") or "").strip().lower()
+            pos        = section_positions.get(sec, 999999)
+
+            # If the AI said this clause is absent, don't trust keyword-match positions —
+            # force to end so "not addressed" items always sort below found items.
+            if lease_says in NOT_PRESENT or lease_says.startswith("not addressed") or lease_says.startswith("not specified"):
+                pos = 999999
+
             item["action_taken"]    = section_actions.get(sec)
             item["lease_position"]  = pos
             item["checklist_index"] = idx
@@ -390,8 +400,13 @@ def results(job_id):
     review = result.get("review", [])
 
     # Ensure lease_position exists on every item (older persisted jobs may lack it)
+    _NOT_PRESENT = {"not addressed", "not specified", "not addressed.", "not specified.",
+                    "not found", "silent", "not mentioned", "not discussed"}
     for idx, r in enumerate(review):
-        if "lease_position" not in r:
+        lease_says = (r.get("lease_says") or "").strip().lower()
+        if lease_says in _NOT_PRESENT or lease_says.startswith("not addressed") or lease_says.startswith("not specified"):
+            r["lease_position"] = 999999
+        elif "lease_position" not in r:
             r["lease_position"] = idx * 100
         if "lease_sort_key" not in r:
             r["lease_sort_key"] = r.get("lease_position", idx * 100) * 10000 + idx
