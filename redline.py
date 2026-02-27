@@ -394,7 +394,7 @@ def apply_redlines(input_path: str, redlines: list, output_path: str,
                 if found: break
 
         # Text not found → fall back to comment annotation
-        if not found and section_actions.get(section) not in ("redline", "both"):
+        if not found and section_actions.get(section) not in ("redline", "comment", "both"):
             issue_obj  = issues_by_section.get(section, {})
             issue_text = issue_obj.get('issue') or reason or "Review required per VIP standards"
             vip_std    = issue_obj.get('vip_standard') or ""

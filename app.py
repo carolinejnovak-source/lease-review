@@ -309,6 +309,7 @@ def _run_analysis(job_id, input_path, original_filename, loi_path=None):
             item["action_taken"]    = section_actions.get(sec)
             item["lease_position"]  = pos
             item["checklist_index"] = idx
+            item["lease_sort_key"]  = pos * 10000 + idx   # stable tiebreaker
             if pos < 50:
                 _sys.stderr.write(f"[pos-early] sec={sec!r} pos={pos}\n")
 
@@ -390,7 +391,9 @@ def results(job_id):
     # Ensure lease_position exists on every item (older persisted jobs may lack it)
     for idx, r in enumerate(review):
         if "lease_position" not in r:
-            r["lease_position"] = idx * 100  # preserve relative order for old jobs
+            r["lease_position"] = idx * 100
+        if "lease_sort_key" not in r:
+            r["lease_sort_key"] = r.get("lease_position", idx * 100) * 10000 + idx
 
     high   = [r for r in review if r.get("priority") == "High"   and r.get("status") != "pass"]
     medium = [r for r in review if r.get("priority") == "Medium" and r.get("status") != "pass"]

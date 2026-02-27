@@ -84,6 +84,9 @@ Return a single JSON object with this exact structure:
 - Maximum 20 redlines — High and Medium priority only
 - If VIP standard is a range → no redline, system inserts comment instead
 - ENTITY NAME: If the tenant entity name is wrong (not "National VIP Centers Management LLC"), you MUST generate a redline. The "find" field must be the EXACT wrong entity name as it appears verbatim in the lease (e.g. "VIP Medical Group"). The "replace" field must be "National VIP Centers Management LLC". Generate one redline per distinct wrong name found.
+- ESTOPPEL CERTIFICATES: "Once per year maximum" is NOT a range — it is a specific limit. You MUST generate a redline that ADDS the following sentence after the existing estoppel request language: "Notwithstanding the foregoing, Landlord shall not request more than one (1) estoppel certificate from Tenant in any twelve (12) month period, except in connection with a bona fide sale or refinancing of the Building." Find the last sentence of the estoppel clause and use it as the "find" text; the "replace" text is that same sentence followed by the new limitation sentence.
+- RENT PAYMENT METHOD: If the lease requires certified check, money order, or "check by mail" (not ACH/wire), generate a redline replacing that language with: "ACH/wire transfer to Landlord's designated bank account." Do NOT propose "ACH or check by mail" — VIP standard is ACH only.
+- CERTIFICATE OF OCCUPANCY RESPONSIBILITY: If the lease says Landlord is responsible for obtaining the CO but includes softening language ("however, Landlord agrees to assist and cooperate" or similar), the redline replace text must DELETE the softening clause entirely. The replace should state only that Landlord is solely responsible at Landlord's sole cost and expense. Do not preserve any language suggesting Tenant bears any co-responsibility.
 {loi_rules}"""
 
 

@@ -253,7 +253,7 @@
       <!-- ── VIEW: APPEARANCE IN LEASE ────────────────────────────────── -->
       <div id="view-lease" style="display:none">
         {% set all_issues = high_issues + medium_issues + low_issues %}
-        {% set lease_sorted = all_issues | sort(attribute='lease_position') %}
+        {% set lease_sorted = all_issues | sort(attribute='lease_sort_key') %}
 
         {% if lease_sorted %}
         <div class="section-header" style="background:#f1f5f9;color:#475569">
