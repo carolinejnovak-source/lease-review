@@ -1,12 +1,19 @@
 from functools import wraps
 from flask import session, redirect, url_for, request
 
+# username (lowercase) → password (case-insensitive check)
+USERS = {
+    "carolinejnovak": "crap",
+    "kelly": "wahoo",
+}
+
+# Keep for backwards compat
 APP_USERNAME = "carolinejnovak"
 APP_PASSWORD = "crap"
 
 def check_credentials(username, password):
-    return (username.lower() == APP_USERNAME.lower() and
-            password.lower() == APP_PASSWORD.lower())
+    pw = USERS.get(username.lower())
+    return pw is not None and password.lower() == pw.lower()
 
 def login_required(f):
     @wraps(f)
