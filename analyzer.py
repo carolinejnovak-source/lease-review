@@ -63,7 +63,8 @@ Return a single JSON object with this exact structure:
       "lease_says": "verbatim quote or summary of what the lease actually says; 'Not addressed' if truly silent",
       "status": "pass" | "fail" | "review",
       "issue": "specific problem description if fail/review, else null",
-      "proposed_language": "proposed lease language to fix the issue — see rules below"
+      "proposed_language": "proposed lease language to fix the issue — see rules below",
+      "lease_section": "the lease section number where this clause appears, e.g. '3.1', '14.3', 'Article IV', 'Exhibit C Section 2'. Use '999' if the clause is not present in the lease."
     }}
   ],
   "redlines": [

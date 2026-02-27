@@ -304,6 +304,42 @@ def _run_analysis(job_id, input_path, original_filename, loi_path=None):
         section_positions  = redline_summary.get("section_positions", {})
         import sys as _sys
         _sys.stderr.write(f"[positions] {sorted(section_positions.items(), key=lambda x:x[1])[:12]}\n")
+        def _section_sort_key(lease_section: str) -> float:
+            """Convert a lease section reference to a sortable float.
+            '3.1' → 3.1, 'Article IV' → 4.0, 'Exhibit C' → 900.0, '999'/missing → 999.0
+            """
+            import re as _re2
+            if not lease_section:
+                return 999.0
+            s = (lease_section or '').strip().lower()
+            if s in ('999', 'not found', 'not addressed', 'n/a', ''):
+                return 999.0
+            roman = {'i':1,'ii':2,'iii':3,'iv':4,'v':5,'vi':6,'vii':7,'viii':8,
+                     'ix':9,'x':10,'xi':11,'xii':12,'xiii':13,'xiv':14,'xv':15,
+                     'xvi':16,'xvii':17,'xviii':18,'xix':19,'xx':20}
+            # Exhibits → 800+
+            if 'exhibit' in s:
+                m = _re2.search(r'exhibit\s+([a-z])', s)
+                base = 800 + (ord(m.group(1)) - ord('a')) if m else 800
+                m2 = _re2.search(r'section\s+(\d+)', s)
+                return base + (int(m2.group(1)) * 0.1 if m2 else 0)
+            # "Article IV" or "Article 4"
+            m = _re2.search(r'article\s+([ivxlcdm]+|\d+)', s)
+            if m:
+                g = m.group(1)
+                val = roman.get(g) or (int(g) if g.isdigit() else 999)
+                return float(val)
+            # "Section 14.3" or bare "14.3" or "14"
+            m = _re2.search(r'(\d+)(?:\.(\d+))?', s)
+            if m:
+                major = int(m.group(1))
+                minor = int(m.group(2)) if m.group(2) else 0
+                return major + minor * 0.01
+            # Basic Terms / Summary at the top
+            if any(w in s for w in ('basic terms', 'summary', 'recital', 'preamble')):
+                return 0.5
+            return 999.0
+
         # Exact "not addressed / not specified" phrases — always sort to bottom
         # regardless of whether a comment was inserted (comment could be a keyword
         # false-match anywhere in the doc, not a reliable position signal).
@@ -335,12 +371,21 @@ def _run_analysis(job_id, input_path, original_filename, loi_path=None):
                 # Absent with context but no action taken — still unreliable
                 pos = 999999
 
+            # Primary sort: section number from AI (most accurate)
+            # Fallback: paragraph position from doc scan
+            sec_ref  = item.get("lease_section") or ""
+            sec_sort = _section_sort_key(sec_ref)
+            if sec_sort >= 999.0 and pos < 999999:
+                # AI didn't give a section number — fall back to paragraph position
+                sec_sort = pos / 10000.0   # normalize to same scale
+
             item["action_taken"]    = action
             item["lease_position"]  = pos
+            item["lease_section"]   = sec_ref
             item["checklist_index"] = idx
-            item["lease_sort_key"]  = pos * 10000 + idx   # stable tiebreaker — always recomputed
+            item["lease_sort_key"]  = sec_sort * 10000 + idx   # stable tiebreaker
             if pos < 50:
-                _sys.stderr.write(f"[pos-early] sec={sec!r} pos={pos}\n")
+                _sys.stderr.write(f"[pos-early] sec={sec!r} pos={pos} sec_ref={sec_ref!r} sec_sort={sec_sort}\n")
 
         with JOBS_LOCK:
             JOBS[job_id].update({
@@ -431,6 +476,33 @@ def results(job_id):
         return (sl.startswith("not addressed") or sl.startswith("not specified")) \
                and sl not in _EXACT_NOT_PRESENT
 
+    import re as _re3
+    def _disk_section_sort_key(lease_section):
+        if not lease_section:
+            return 999.0
+        s = (lease_section or '').strip().lower()
+        if s in ('999', 'not found', 'not addressed', 'n/a', ''):
+            return 999.0
+        roman = {'i':1,'ii':2,'iii':3,'iv':4,'v':5,'vi':6,'vii':7,'viii':8,
+                 'ix':9,'x':10,'xi':11,'xii':12,'xiii':13,'xiv':14,'xv':15,
+                 'xvi':16,'xvii':17,'xviii':18,'xix':19,'xx':20}
+        if 'exhibit' in s:
+            m = _re3.search(r'exhibit\s+([a-z])', s)
+            base = 800 + (ord(m.group(1)) - ord('a')) if m else 800
+            m2 = _re3.search(r'section\s+(\d+)', s)
+            return base + (int(m2.group(1)) * 0.1 if m2 else 0)
+        m = _re3.search(r'article\s+([ivxlcdm]+|\d+)', s)
+        if m:
+            g = m.group(1)
+            val = roman.get(g) or (int(g) if g.isdigit() else 999)
+            return float(val)
+        m = _re3.search(r'(\d+)(?:\.(\d+))?', s)
+        if m:
+            return int(m.group(1)) + (int(m.group(2)) * 0.01 if m.group(2) else 0)
+        if any(w in s for w in ('basic terms', 'summary', 'recital', 'preamble')):
+            return 0.5
+        return 999.0
+
     for idx, r in enumerate(review):
         lease_says  = r.get("lease_says") or ""
         action_done = r.get("action_taken")
@@ -443,7 +515,12 @@ def results(job_id):
         else:
             if "lease_position" not in r:
                 r["lease_position"] = idx * 100
-            r["lease_sort_key"] = r.get("lease_position", idx * 100) * 10000 + idx
+            sec_ref  = r.get("lease_section") or ""
+            sec_sort = _disk_section_sort_key(sec_ref)
+            pos_fb   = r.get("lease_position", idx * 100)
+            if sec_sort >= 999.0 and pos_fb < 999999:
+                sec_sort = pos_fb / 10000.0
+            r["lease_sort_key"] = sec_sort * 10000 + idx
 
     high   = [r for r in review if r.get("priority") == "High"   and r.get("status") != "pass"]
     medium = [r for r in review if r.get("priority") == "Medium" and r.get("status") != "pass"]
