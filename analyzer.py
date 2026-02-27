@@ -64,7 +64,7 @@ Return a single JSON object with this exact structure:
       "status": "pass" | "fail" | "review",
       "issue": "specific problem description if fail/review, else null",
       "proposed_language": "proposed lease language to fix the issue — see rules below",
-      "lease_section": "the lease section number where this clause appears, e.g. '3.1', '14.3', 'Article IV', 'Exhibit C Section 2'. Use '999' if the clause is not present in the lease."
+      "lease_section": "REQUIRED — the section number where this clause appears (e.g. '3.1', '14.3', 'Article IV', 'Exhibit C §2'). If the clause is absent from the lease, use '999'. This field is mandatory for every item."
     }}
   ],
   "redlines": [
@@ -94,7 +94,8 @@ Return a single JSON object with this exact structure:
 5. DEAL SUMMARY ACCURACY: For deal_summary fields, read the FULL lease text carefully before saying a value is "not specified." Many leases define base rent, escalation, and RSF in early sections (Basic Terms, Summary of Basic Lease Terms, or similar). Quote the actual lease value.
 6. LOI SUPERSEDES VIP STANDARD: If an LOI was provided, agreed LOI terms override VIP standards. Example: if the LOI specifies 7% annual escalation, the lease must match 7% — do NOT flag this as an issue just because VIP standard is 3%. Do flag it if the lease deviates from the LOI.
 7. DEFAULT TO COMMENT: If you are uncertain whether a clause warrants a redline, or if the lease language is ambiguous, default to generating a comment annotation rather than a redline. A comment is always safer than an incorrect redline. EXCEPTION: Entity Name ALWAYS gets a redline — never a comment, regardless of uncertainty.
-8. ADDITIONAL ISSUES: After reviewing all checklist items, identify any unusual, non-standard, or red-flag clauses in the lease that are NOT covered by the checklist. Add these to the "additional_issues" array. Examples: unusual termination rights, atypical assignment restrictions, non-standard force majeure, unusual co-tenancy requirements, etc. If none, return an empty array.
+8. ADDITIONAL ISSUES: After reviewing all checklist items, identify any unusual, non-standard, or red-flag clauses in the lease that are NOT covered by the checklist.
+9. LEASE_SECTION IS MANDATORY: Every review item MUST include a "lease_section" field with the actual section number (e.g. "3.1", "14.3", "Article IV"). Do not omit this field. If the clause is absent from the lease, use "999". This is used to sort issues in document order. Add these to the "additional_issues" array. Examples: unusual termination rights, atypical assignment restrictions, non-standard force majeure, unusual co-tenancy requirements, etc. If none, return an empty array.
 
 === RULES FOR REDLINES ===
 - Each checklist item has an "Anticipated Action" — follow it:

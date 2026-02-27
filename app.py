@@ -571,12 +571,14 @@ def debug_job(job_id):
             "status": item.get("status"),
             "priority": item.get("priority"),
             "lease_position": item.get("lease_position", "NOT SET"),
+            "lease_section": item.get("lease_section", "NOT SET"),
+            "lease_sort_key": item.get("lease_sort_key", "NOT SET"),
             "in_positions": sec in positions,
             "positions_value": positions.get(sec, "MISSING"),
             "lease_says": item.get("lease_says", ""),
             "action_taken": item.get("action_taken", ""),
         })
-    rows.sort(key=lambda x: x["lease_position"] if isinstance(x["lease_position"], int) else 999999)
+    rows.sort(key=lambda x: float(x["lease_sort_key"]) if isinstance(x["lease_sort_key"], (int, float)) else 999999)
     return "<pre>" + _json.dumps(rows, indent=2) + "</pre>"
 
 
