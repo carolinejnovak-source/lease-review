@@ -97,14 +97,36 @@
     <a href="/" class="btn btn-sm btn-outline-secondary"><i class="fa fa-arrow-left me-1"></i>New Lease</a>
   </div>
 
-  <!-- ── DEAL SUMMARY PARAGRAPH ──────────────────────────────────────── -->
-  {% if deal_summary_paragraph %}
+  <!-- ── KEY TERMS ─────────────────────────────────────────────────── -->
+  {% if key_terms %}
   <div class="mb-4 p-3 rounded-3" style="background:#f0f9ff;border:1px solid #bae6fd;">
     <div class="d-flex align-items-center gap-2 mb-2">
-      <i class="fa fa-file-lines" style="color:#0369a1"></i>
-      <span class="fw-semibold" style="color:#0369a1;font-size:0.85rem;text-transform:uppercase;letter-spacing:.05em">Deal Summary</span>
+      <i class="fa fa-list-check" style="color:#0369a1"></i>
+      <span class="fw-semibold" style="color:#0369a1;font-size:0.85rem;text-transform:uppercase;letter-spacing:.05em">Key Terms</span>
     </div>
-    <p class="mb-0" style="color:#0f172a;font-size:0.95rem;line-height:1.6">{{ deal_summary_paragraph }}</p>
+    <ul style="list-style:none;padding:0;margin:0;font-size:0.92rem;line-height:1.7;color:#0f172a">
+      {% for item in key_terms %}
+        {% if item.level == 1 %}
+          {% if item.value %}
+          <li style="margin-top:0.4rem">
+            <span class="fw-semibold">{{ item.label }}:</span>
+            <span style="color:#374151">{{ item.value }}</span>
+          </li>
+          {% else %}
+          <li style="margin-top:0.5rem"><span class="fw-semibold">{{ item.label }}:</span></li>
+          {% endif %}
+        {% elif item.level == 2 %}
+          <li style="padding-left:1.4rem;color:#374151">
+            <span style="color:#6b7280">–</span>
+            {% if item.value and item.value != item.label %}
+              <span class="fw-semibold">{{ item.label }}:</span> {{ item.value }}
+            {% else %}
+              {{ item.label }}
+            {% endif %}
+          </li>
+        {% endif %}
+      {% endfor %}
+    </ul>
   </div>
   {% endif %}
 

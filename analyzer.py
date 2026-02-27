@@ -3,7 +3,7 @@ Claude lease analysis — returns structured review table and redline suggestion
 """
 import json, os, re
 import anthropic
-from checklist import CHECKLIST_ITEMS, DEAL_SUMMARY_FIELDS, build_checklist_text
+from checklist import CHECKLIST_ITEMS, DEAL_SUMMARY_FIELDS, KEY_TERMS_PROMPT, build_checklist_text
 
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 MODEL = os.environ.get("CLAUDE_MODEL", "claude-opus-4-5")
@@ -42,7 +42,11 @@ ANALYSIS_PROMPT_TEMPLATE = """Review the following commercial lease against VIP 
 Return a single JSON object with this exact structure:
 {{
   "property_name": "name/address of the property if identifiable",
-  "deal_summary_paragraph": "A 2–4 sentence plain-English summary of the key deal terms: RSF, annual escalation, term length, abatement months, TI allowance, and estimated buildout cost if stated. Also include any variance-from-standard items (security deposit >2 months, personal guaranty required, relocation clause present). Example: 'This is a 10-year lease for approximately 2,500 RSF in Schertz, TX. Annual escalation is 2.5%. No abatement period is provided. TI Allowance is $40/USF — significantly below VIP standard.'",
+  "key_terms": [
+    {{"label": "Location", "level": 1, "value": "full address as extracted from lease"}},
+    {{"label": "Size", "level": 1, "value": "square footage"}},
+    "... (see KEY TERMS STRUCTURE below for all required items)"
+  ],
   "deal_summary": [
     {{
       "field": "field name",
@@ -185,7 +189,7 @@ def analyze_lease(lease_text: str, loi_text: str = None) -> dict:
         loi_text = loi_text[:50000] + "\n\n[LOI TRUNCATED]"
 
     checklist_text = build_checklist_text()
-    full_checklist = checklist_text + "\n\nDEAL SUMMARY FIELDS TO EXTRACT:\n" + DEAL_SUMMARY_FIELDS_TEXT
+    full_checklist = checklist_text + "\n\nDEAL SUMMARY FIELDS TO EXTRACT:\n" + DEAL_SUMMARY_FIELDS_TEXT + "\n\n" + KEY_TERMS_PROMPT
 
     # Mark range standards in checklist so Claude sees which ones apply
     range_sections = [

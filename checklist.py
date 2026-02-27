@@ -541,6 +541,107 @@ DEAL_SUMMARY_FIELDS = [
 ]
 
 
+# ── Key Terms Structure ──────────────────────────────────────────────────────
+# Used to instruct the AI how to generate the "Key Terms" bulleted list.
+# level=1 → main header bullet; level=2 → sub-bullet under the last level-1 header
+# level=3 → sub-sub-bullet (for items like Construction Cost Cap within TI)
+# "label" is what appears in bold; "instruction" tells the AI what value to extract.
+# "example" is shown to the AI as formatting guidance only.
+
+KEY_TERMS_STRUCTURE = [
+    {"label": "Location",      "level": 1, "instruction": "Full street address, city, state, zip + floor/suite if specified",
+     "example": "1600 Market Street, Philadelphia, PA 19103 – 16th Floor"},
+
+    {"label": "Size",          "level": 1, "instruction": "Square footage (RSF or USF) as stated in the lease",
+     "example": "3,987 RSF"},
+
+    {"label": "Term",          "level": 1, "instruction": "Term length in months and approximate years",
+     "example": "129 months (~10.75 years)"},
+
+    {"label": "Base Rent",     "level": 1, "instruction": "Header only — sub-items follow", "example": ""},
+
+    {"label": "Year 1",        "level": 2, "instruction": "Year 1 price per square foot and monthly total",
+     "example": "Year 1 (2026): $36.00/SF = $11,961.00/month"},
+
+    {"label": "Annual Increases", "level": 2, "instruction": "Annual escalation percentage or fixed dollar amount",
+     "example": "Scheduled annual increases each year"},
+
+    {"label": "Final Year",    "level": 2, "instruction": "Final scheduled year price per square foot and monthly total",
+     "example": "Final scheduled year (Year 11 annualized): $47.22/SF = $15,688.85/month"},
+
+    {"label": "Abatements",    "level": 2, "instruction": "Any free-rent or abatement periods; say 'None' if not present",
+     "example": "Note abatement: 3 full months free, partial month 4 (Tenant pays $2,033.37 only)"},
+
+    {"label": "Operating Expenses", "level": 1, "instruction": "Header only — sub-items follow", "example": ""},
+
+    {"label": "Structure",     "level": 2, "instruction": "How OPEX is structured (e.g., base year, fixed NNN, gross, etc.)",
+     "example": "Tenant pays increases over Base Year"},
+
+    {"label": "Pro Rata Share", "level": 2, "instruction": "Tenant's proportionate share percentage for OPEX",
+     "example": "Pro Rata Share: 0.5246%"},
+
+    {"label": "Real Estate Taxes", "level": 1, "instruction": "Header only — sub-items follow", "example": ""},
+
+    {"label": "Structure",     "level": 2, "instruction": "How real estate taxes are structured",
+     "example": "Tenant pays increases over Base Year"},
+
+    {"label": "Pro Rata Share", "level": 2, "instruction": "Tenant's proportionate share percentage for RE taxes (may differ from OPEX share)",
+     "example": "Pro Rata Share: 0.4827%"},
+
+    {"label": "TI Allowance / Landlord Work", "level": 1, "instruction": "Header only — sub-items follow", "example": ""},
+
+    {"label": "Scope",         "level": 2, "instruction": "What work LL is doing — summary (e.g., turnkey, shell only, Tenant performs own work with TI reimbursement)",
+     "example": "Landlord builds per space plan"},
+
+    {"label": "Construction Cost Cap", "level": 2,
+     "instruction": "TI allowance or cost cap in $/SF and total dollar amount if calculable",
+     "example": "Construction Cost Cap: $105.51/SF = $419,718.78 total cap"},
+
+    {"label": "Tenant Responsibility for TI Overages", "level": 2,
+     "instruction": "Who pays costs above the TI allowance/cap",
+     "example": "Tenant pays 100% of costs above cap"},
+
+    {"label": "Construction Supervision Fee", "level": 2,
+     "instruction": "LL's construction management/supervision fee as a percentage",
+     "example": "3% of construction costs (deducted from TI cap or billed to Tenant)"},
+
+    {"label": "Delivery Condition", "level": 1,
+     "instruction": "How space is delivered — as-is, warm shell, cold shell, turn-key, or specific condition",
+     "example": "\"As-is\" except for Landlord's contracted TI work"},
+
+    {"label": "Security Deposit", "level": 1,
+     "instruction": "Dollar amount and equivalent months of rent",
+     "example": "$35,883.00, 3 months rent"},
+
+    {"label": "HVAC After Hours", "level": 1, "instruction": "Header only — sub-items follow", "example": ""},
+
+    {"label": "Cost",          "level": 2,
+     "instruction": "After-hours HVAC cost per hour; say 'Not specified' if absent",
+     "example": "$80/hour per floor"},
+
+    {"label": "Utilities",     "level": 1, "instruction": "Header only — sub-items follow", "example": ""},
+
+    {"label": "Notes",         "level": 2,
+     "instruction": "Who pays utilities and how (direct meter, submeter, included in OPEX, etc.)",
+     "example": "Electric separately allocated by floor share or submeter"},
+]
+
+
+KEY_TERMS_PROMPT = """
+KEY TERMS STRUCTURE TO EXTRACT:
+For each item below, extract the value from the lease exactly as instructed. Format as shown in the example.
+Return as a JSON array "key_terms" where each element has:
+  - "label": the label shown
+  - "level": 1 (main) or 2 (sub-item)
+  - "value": the extracted value (never null — write "Not specified" or "Not addressed" if truly absent)
+
+Items to extract:
+""" + "\n".join(
+    f"  level={item['level']} | {item['label']}: {item['instruction']} | example: {item['example']}"
+    for item in KEY_TERMS_STRUCTURE
+)
+
+
 # ── Compatibility aliases ────────────────────────────────────────────────────
 CHECKLIST_ITEMS = CHECKLIST   # analyzer.py uses this name
 

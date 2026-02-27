@@ -408,7 +408,7 @@ def results(job_id):
     return render_template("results.html",
         job_id=job_id,
         property_name=result.get("property_name", "Unknown Property"),
-        deal_summary_paragraph=result.get("deal_summary_paragraph", ""),
+        key_terms=result.get("key_terms", []),
         deal_summary=result.get("deal_summary", []),
         high_issues=high,
         medium_issues=medium,
