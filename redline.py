@@ -270,6 +270,13 @@ def apply_redlines(input_path: str, redlines: list, output_path: str,
         if sec:
             issues_by_section[sec] = item
 
+    # Minimum paragraph length to be considered a "body clause" position.
+    # Basic Terms / Summary sections typically have short one-liner entries
+    # (e.g. "Holdover Rate: 150%") while body clauses are multi-sentence.
+    # We prefer the longest matching paragraph so that Basic Terms summaries
+    # don't steal position from the actual negotiated clause further down.
+    MIN_BODY_PARA_LEN = 80  # chars — anything shorter is treated as a summary line
+
     # ── Pre-scan original doc: find-text positions (before any modifications) ─
     # Lock in a position for every section that has a redline, based on where
     # the find-text appears in the ORIGINAL document.  This gives accurate sort
@@ -280,12 +287,21 @@ def apply_redlines(input_path: str, redlines: list, output_path: str,
         if not find_text or not sec:
             continue
         find_norm = re.sub(r'\s+', ' ', find_text).strip()
+
+        best_idx  = None
+        best_len  = -1
         for para_idx, para in enumerate(doc.paragraphs):
             para_full = re.sub(r'\s+', ' ', ''.join(para._p.itertext()).lower())
             if find_norm in para_full:
-                if para_idx < section_positions.get(sec, 999999):
-                    section_positions[sec] = para_idx
-                break
+                para_len = len(para_full.strip())
+                # Prefer longer paragraphs (body clauses) over short summary lines.
+                # Among paragraphs of equal length, prefer the earlier one.
+                if para_len > best_len:
+                    best_len = para_len
+                    best_idx = para_idx
+
+        if best_idx is not None and best_idx < section_positions.get(sec, 999999):
+            section_positions[sec] = best_idx
 
     # ── Keyword fallback: approximate positions for still-unpositioned sections ─
     # Build a ranked list of candidate search strings for each section, then
@@ -327,33 +343,53 @@ def apply_redlines(input_path: str, redlines: list, output_path: str,
             """All text in a paragraph including hyperlinks, bookmarks, etc."""
             return re.sub(r'\s+', ' ', ''.join(para._p.itertext()).lower())
 
-        def _first_match(candidates):
+        def _best_match(candidates):
+            """Return the paragraph index of the best (longest body) match."""
+            best_idx = None
+            best_len = -1
             for cand in candidates:
                 if not cand or len(cand) < 4:
                     continue
                 cand_norm = re.sub(r'\s+', ' ', cand.lower()).strip()
                 for pi, para in enumerate(doc.paragraphs):
-                    if cand_norm in _para_full_text(para):
+                    full = _para_full_text(para)
+                    if cand_norm in full:
+                        plen = len(full.strip())
+                        if plen > best_len:
+                            best_len = plen
+                            best_idx = pi
+            return best_idx
+
+        def _first_body_match(candidates):
+            """Return the earliest paragraph ≥ MIN_BODY_PARA_LEN that matches."""
+            for cand in candidates:
+                if not cand or len(cand) < 4:
+                    continue
+                cand_norm = re.sub(r'\s+', ' ', cand.lower()).strip()
+                for pi, para in enumerate(doc.paragraphs):
+                    full = _para_full_text(para)
+                    if cand_norm in full and len(full.strip()) >= MIN_BODY_PARA_LEN:
                         return pi
             return None
 
-        # Pass 1: redline find-text (verbatim lease text, highest accuracy)
-        pos = _first_match(section_find_texts.get(sec, []))
+        # Pass 1: redline find-text — prefer longest match (body over summary)
+        pos = _best_match(section_find_texts.get(sec, []))
 
-        # Pass 2: lease_says snippets + quoted substrings
+        # Pass 2: lease_says snippets + quoted substrings — prefer longest
         if pos is None:
-            pos = _first_match(section_lease_says.get(sec, []))
+            pos = _best_match(section_lease_says.get(sec, []))
 
-        # Pass 3: all section-name keywords in same paragraph
+        # Pass 3: all section-name keywords in same body paragraph (≥ MIN length)
         if pos is None and kws:
             for pi, para in enumerate(doc.paragraphs):
-                if all(kw in para.text.lower() for kw in kws):
+                full = _para_full_text(para)
+                if all(kw in full for kw in kws) and len(full.strip()) >= MIN_BODY_PARA_LEN:
                     pos = pi
                     break
 
-        # Pass 4: longest single keyword
+        # Pass 4: longest single keyword in a body paragraph
         if pos is None and kws:
-            pos = _first_match([max(kws, key=len)])
+            pos = _first_body_match([max(kws, key=len)])
 
         if pos is not None:
             section_positions[sec] = pos
