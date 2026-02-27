@@ -373,33 +373,32 @@ def apply_redlines(input_path: str, redlines: list, output_path: str,
 
         found = False
 
-        # Search paragraphs
+        # Search paragraphs — apply to ALL occurrences (not just the first)
+        # so repeated clauses (e.g. "June 1, 2026" or wrong entity name throughout)
+        # are all corrected in one pass.
         for para_idx, para in enumerate(doc.paragraphs):
             change_id, ok = _apply_to_para(para, find, replace, change_id)
             if ok:
-                found = True
                 applied += 1
                 _record_action(section, "redline")
-                section_positions[section] = para_idx
-                break
+                # Record only the FIRST (earliest) occurrence for sort-order purposes
+                if not found:
+                    section_positions[section] = para_idx
+                found = True
+                # Do NOT break — continue to replace all remaining occurrences
 
-        # Search table cells
-        if not found:
-            for table in doc.tables:
-                for row in table.rows:
-                    for cell in row.cells:
-                        for para in cell.paragraphs:
-                            change_id, ok = _apply_to_para(para, find, replace, change_id)
-                            if ok:
-                                found = True
-                                applied += 1
-                                _record_action(section, "redline")
-                                # Tables don't have a simple global para_idx; use 999998
+        # Search table cells — also apply to all occurrences
+        for table in doc.tables:
+            for row in table.rows:
+                for cell in row.cells:
+                    for para in cell.paragraphs:
+                        change_id, ok = _apply_to_para(para, find, replace, change_id)
+                        if ok:
+                            found = True
+                            applied += 1
+                            _record_action(section, "redline")
+                            if section_positions.get(section, 999999) >= 999998:
                                 section_positions[section] = 999998
-                                break
-                        if found: break
-                    if found: break
-                if found: break
 
         # Text not found → fall back to comment annotation
         if not found and section_actions.get(section) not in ("redline", "comment", "both"):
