@@ -156,31 +156,39 @@ def _comment_confidence(para_text: str, section_name: str, keywords: list) -> fl
 CONFIDENCE_THRESHOLD = 0.80   # below this → append to end of document
 
 
-def _insert_comment_annotation(doc, section_name, issue_text, vip_standard="") -> int:
+def _insert_comment_annotation(doc, section_name, issue_text, vip_standard="",
+                               target_para_idx: int = None) -> int:
     """
     Insert a yellow-highlighted VIP LEGAL REVIEW annotation.
 
     Strategy:
-      - Score every paragraph for how likely it is to be the right anchor.
-      - If best score ≥ CONFIDENCE_THRESHOLD → insert ABOVE that paragraph.
+      - If target_para_idx is provided, insert directly above that paragraph
+        (used when a redline was already applied there — guarantees comment
+        sits immediately above the redlined text).
+      - Otherwise, score every paragraph and insert above the best match.
       - If best score < CONFIDENCE_THRESHOLD → append to bottom of document.
 
     Returns the paragraph index used (or 999999 when appended to bottom).
     """
-    keywords = [w for w in section_name.lower().split() if len(w) > 3]
+    best_para     = None
+    best_para_idx = 999999
+    best_score    = 0.0
 
-    best_para      = None
-    best_para_idx  = 999999
-    best_score     = 0.0
-
-    for para_idx, para in enumerate(doc.paragraphs):
-        if not para.text.strip():
-            continue
-        score = _comment_confidence(para.text, section_name, keywords)
-        if score > best_score:
-            best_score    = score
-            best_para     = para
-            best_para_idx = para_idx
+    if target_para_idx is not None and 0 <= target_para_idx < len(doc.paragraphs):
+        # Caller already knows the exact paragraph — skip keyword search
+        best_para     = doc.paragraphs[target_para_idx]
+        best_para_idx = target_para_idx
+        best_score    = 1.0   # treat as perfect confidence
+    else:
+        keywords = [w for w in section_name.lower().split() if len(w) > 3]
+        for para_idx, para in enumerate(doc.paragraphs):
+            if not para.text.strip():
+                continue
+            score = _comment_confidence(para.text, section_name, keywords)
+            if score > best_score:
+                best_score    = score
+                best_para     = para
+                best_para_idx = para_idx
 
     # Build the comment paragraph element
     comment_para = OxmlElement('w:p')
@@ -420,7 +428,15 @@ def apply_redlines(input_path: str, redlines: list, output_path: str,
 
             issue_text = issue.get('issue') or 'Review required per VIP standards'
             vip_std    = issue.get('vip_standard') or ''
-            para_idx = _insert_comment_annotation(doc, sec, issue_text, vip_std)
+
+            # If a redline was applied for this section, we know exactly which
+            # paragraph it sits in — insert the comment immediately above it.
+            known_pos = section_positions.get(sec)
+            target_idx = known_pos if (known_pos is not None and known_pos < 999990
+                                       and section_actions.get(sec) == "redline") else None
+
+            para_idx = _insert_comment_annotation(doc, sec, issue_text, vip_std,
+                                                  target_para_idx=target_idx)
             _record_action(sec, "comment")
             # Keep earliest position — never overwrite a lower (earlier) value
             if para_idx < section_positions.get(sec, 999999):

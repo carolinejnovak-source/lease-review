@@ -314,16 +314,17 @@ def _run_analysis(job_id, input_path, original_filename, loi_path=None):
                     or s.startswith("not specified"))
 
         for idx, item in enumerate(result.get("review", [])):
-            sec        = item.get("section")
-            lease_says = (item.get("lease_says") or "")
-            pos        = section_positions.get(sec, 999999)
+            sec         = item.get("section")
+            lease_says  = (item.get("lease_says") or "")
+            action      = section_actions.get(sec)
+            pos         = section_positions.get(sec, 999999)
 
-            # If the AI said this clause is absent, don't trust keyword-match positions —
-            # force to end so "not addressed" items always sort below found items.
-            if _is_not_present(lease_says):
+            # Only force 999999 when the clause is truly absent AND no redline/comment was applied.
+            # If an action was taken, the section exists in the document — trust the scanned position.
+            if _is_not_present(lease_says) and not action:
                 pos = 999999
 
-            item["action_taken"]    = section_actions.get(sec)
+            item["action_taken"]    = action
             item["lease_position"]  = pos
             item["checklist_index"] = idx
             item["lease_sort_key"]  = pos * 10000 + idx   # stable tiebreaker — always recomputed
@@ -414,10 +415,12 @@ def results(job_id):
         return s in _NOT_PRESENT or s.startswith("not addressed") or s.startswith("not specified")
 
     for idx, r in enumerate(review):
-        lease_says = r.get("lease_says") or ""
-        if _is_absent(lease_says):
+        lease_says  = r.get("lease_says") or ""
+        action_done = r.get("action_taken")  # "redline", "comment", "both", or None
+        if _is_absent(lease_says) and not action_done:
+            # Truly absent + no action taken → sort to bottom
             r["lease_position"] = 999999
-            r["lease_sort_key"] = 999999 * 10000 + idx   # always override — don't use stale stored value
+            r["lease_sort_key"] = 999999 * 10000 + idx
         else:
             if "lease_position" not in r:
                 r["lease_position"] = idx * 100
