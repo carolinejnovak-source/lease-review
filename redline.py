@@ -231,7 +231,7 @@ def _insert_comment_annotation(doc, section_name, issue_text, vip_standard="") -
 # ── Public API ───────────────────────────────────────────────────────────────
 
 def apply_redlines(input_path: str, redlines: list, output_path: str,
-                   issues: list = None) -> dict:
+                   issues: list = None, additional_issues: list = None) -> dict:
     """
     Apply tracked-change redlines to a .docx.
     For redlines where the find-text can't be located, insert a comment annotation.
@@ -429,6 +429,48 @@ def apply_redlines(input_path: str, redlines: list, output_path: str,
 
     # (Passing items have no redline/comment, so no position needed —
     #  they sort to the bottom of the lease-order view with position 999999.)
+
+    # ── Additional Issues: append non-checklist red flags at end of document ──
+    if additional_issues:
+        hdr = OxmlElement('w:p')
+        hdr_r = OxmlElement('w:r')
+        hdr_rpr = OxmlElement('w:rPr')
+        hdr_b = OxmlElement('w:b')
+        hdr_rpr.append(hdr_b)
+        hdr_r.append(hdr_rpr)
+        hdr_t = OxmlElement('w:t')
+        hdr_t.text = '\u2756 ADDITIONAL VIP REVIEW ITEMS \u2014 NON-STANDARD CLAUSES'
+        hdr_r.append(hdr_t)
+        hdr.append(hdr_r)
+        doc.element.body.append(hdr)
+
+        for ai_item in additional_issues:
+            title   = (ai_item.get('title') or 'Additional Issue').upper()
+            concern = ai_item.get('concern') or ''
+            action  = ai_item.get('suggested_action') or ''
+            ai_para = OxmlElement('w:p')
+            ai_ppr  = OxmlElement('w:pPr')
+            ai_shd  = OxmlElement('w:shd')
+            ai_shd.set(qn('w:val'), 'clear')
+            ai_shd.set(qn('w:color'), 'auto')
+            ai_shd.set(qn('w:fill'), 'FFF3CD')
+            ai_ppr.append(ai_shd)
+            ai_para.append(ai_ppr)
+            ai_r   = OxmlElement('w:r')
+            ai_rpr = OxmlElement('w:rPr')
+            ai_b2  = OxmlElement('w:b')
+            ai_rpr.append(ai_b2)
+            ai_clr = OxmlElement('w:color')
+            ai_clr.set(qn('w:val'), 'B45309')
+            ai_rpr.append(ai_clr)
+            ai_r.append(ai_rpr)
+            ai_t = OxmlElement('w:t')
+            ai_t.text = f'\u2691 {title}: {concern}'
+            if action:
+                ai_t.text += f'  |  ACTION: {action}'
+            ai_r.append(ai_t)
+            ai_para.append(ai_r)
+            doc.element.body.append(ai_para)
 
     doc.save(output_path)
 

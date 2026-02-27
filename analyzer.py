@@ -42,6 +42,7 @@ ANALYSIS_PROMPT_TEMPLATE = """Review the following commercial lease against VIP 
 Return a single JSON object with this exact structure:
 {{
   "property_name": "name/address of the property if identifiable",
+  "deal_summary_paragraph": "A 2–4 sentence plain-English summary of the key deal terms: RSF, annual escalation, term length, abatement months, TI allowance, and estimated buildout cost if stated. Also include any variance-from-standard items (security deposit >2 months, personal guaranty required, relocation clause present). Example: 'This is a 10-year lease for approximately 2,500 RSF in Schertz, TX. Annual escalation is 2.5%. No abatement period is provided. TI Allowance is $40/USF — significantly below VIP standard.'",
   "deal_summary": [
     {{
       "field": "field name",
@@ -68,6 +69,15 @@ Return a single JSON object with this exact structure:
       "replace": "proposed replacement language",
       "reason": "brief reason for change"
     }}
+  ],
+  "additional_issues": [
+    {{
+      "title": "short title for the issue",
+      "description": "description of the non-standard or unusual clause",
+      "lease_text": "verbatim quote from the lease",
+      "concern": "why this is a red flag or unusual",
+      "suggested_action": "what VIP's attorney should do"
+    }}
   ]
 }}
 
@@ -77,8 +87,17 @@ Return a single JSON object with this exact structure:
 3. MISSING CLAUSES: If the lease is entirely silent on a topic (no text to replace), set proposed_language to language that can be ADDED to the lease. Do NOT generate a redline entry for it (since there is no "find" text).
 4. VERBATIM FIND TEXT: The "find" field in redlines must be EXACT verbatim text from the lease — copy it character-for-character. Keep it short: one sentence or clause, not a full paragraph.
 5. DEAL SUMMARY ACCURACY: For deal_summary fields, read the FULL lease text carefully before saying a value is "not specified." Many leases define base rent, escalation, and RSF in early sections (Basic Terms, Summary of Basic Lease Terms, or similar). Quote the actual lease value.
+6. LOI SUPERSEDES VIP STANDARD: If an LOI was provided, agreed LOI terms override VIP standards. Example: if the LOI specifies 7% annual escalation, the lease must match 7% — do NOT flag this as an issue just because VIP standard is 3%. Do flag it if the lease deviates from the LOI.
+7. DEFAULT TO COMMENT: If you are uncertain whether a clause warrants a redline, or if the lease language is ambiguous, default to generating a comment annotation rather than a redline. A comment is always safer than an incorrect redline.
+8. ADDITIONAL ISSUES: After reviewing all checklist items, identify any unusual, non-standard, or red-flag clauses in the lease that are NOT covered by the checklist. Add these to the "additional_issues" array. Examples: unusual termination rights, atypical assignment restrictions, non-standard force majeure, unusual co-tenancy requirements, etc. If none, return an empty array.
 
 === RULES FOR REDLINES ===
+- Each checklist item has an "Anticipated Action" — follow it:
+  • "redline" → generate a redlines entry for this section when it fails
+  • "comment" → do NOT generate a redline; use proposed_language in review item only (system inserts comment annotation)
+  • "redline_if_red_flag" → only generate a redline if the red flag condition is explicitly present; otherwise comment only
+  • "comment_only" → always comment, never redline regardless of severity
+- When in doubt, default to comment (never generate a redline you are not confident about)
 - Only for genuine issues (fail or review status)
 - Skip redline entry entirely if the clause is MISSING from the lease (nothing to replace)
 - Maximum 20 redlines — High and Medium priority only

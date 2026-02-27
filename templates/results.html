@@ -97,6 +97,17 @@
     <a href="/" class="btn btn-sm btn-outline-secondary"><i class="fa fa-arrow-left me-1"></i>New Lease</a>
   </div>
 
+  <!-- ── DEAL SUMMARY PARAGRAPH ──────────────────────────────────────── -->
+  {% if deal_summary_paragraph %}
+  <div class="mb-4 p-3 rounded-3" style="background:#f0f9ff;border:1px solid #bae6fd;">
+    <div class="d-flex align-items-center gap-2 mb-2">
+      <i class="fa fa-file-lines" style="color:#0369a1"></i>
+      <span class="fw-semibold" style="color:#0369a1;font-size:0.85rem;text-transform:uppercase;letter-spacing:.05em">Deal Summary</span>
+    </div>
+    <p class="mb-0" style="color:#0f172a;font-size:0.95rem;line-height:1.6">{{ deal_summary_paragraph }}</p>
+  </div>
+  {% endif %}
+
   <!-- ── DOWNLOAD BANNER (top) ─────────────────────────────────────────── -->
   <div class="download-banner">
     <div>
@@ -295,6 +306,47 @@
     </div>
   </div>
 </div>
+
+<!-- ── ADDITIONAL ISSUES ─────────────────────────────────────────────── -->
+{% if additional_issues %}
+<div class="container-fluid px-3 px-md-4 mt-4 mb-5">
+  <div class="card shadow-sm border-0">
+    <div class="card-body p-4">
+      <h5 class="fw-bold mb-1" style="color:#92400e">
+        <i class="fa fa-triangle-exclamation me-2" style="color:#f59e0b"></i>
+        Additional Review Items — Non-Standard Clauses
+      </h5>
+      <p class="text-muted small mb-3">The following items were identified as unusual or non-standard but are not covered by the VIP checklist. Flag for attorney review.</p>
+      {% for ai in additional_issues %}
+      <div class="issue-card mb-3" style="border-left:4px solid #f59e0b;background:#fffbeb">
+        <div class="d-flex align-items-center gap-2 flex-wrap mb-2">
+          <div class="issue-title" style="color:#92400e">{{ ai.title }}</div>
+          <span class="issue-label" style="background:#fef3c7;color:#92400e;border:1px solid #fcd34d">⚑ NON-STANDARD</span>
+        </div>
+        {% if ai.lease_text %}
+        <div class="detail-row mb-1">
+          <span class="detail-label">LEASE SAYS</span>
+          <span class="detail-val">{{ ai.lease_text }}</span>
+        </div>
+        {% endif %}
+        {% if ai.concern %}
+        <div class="detail-row mb-1">
+          <span class="detail-label" style="color:#dc2626">CONCERN</span>
+          <span class="detail-val" style="color:#dc2626">{{ ai.concern }}</span>
+        </div>
+        {% endif %}
+        {% if ai.suggested_action %}
+        <div class="proposed-language mt-2">
+          <div class="fw-semibold mb-1" style="font-size:.78rem;text-transform:uppercase;letter-spacing:.05em;color:#0369a1">SUGGESTED ACTION</div>
+          <div>{{ ai.suggested_action }}</div>
+        </div>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+{% endif %}
 
 <script>
 function applySort() {

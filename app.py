@@ -295,6 +295,7 @@ def _run_analysis(job_id, input_path, original_filename, loi_path=None):
             result.get("redlines", []),
             tmp_out.name,
             issues=all_issues,
+            additional_issues=result.get("additional_issues", []),
         )
         result["redline_summary"] = redline_summary
 
@@ -407,6 +408,7 @@ def results(job_id):
     return render_template("results.html",
         job_id=job_id,
         property_name=result.get("property_name", "Unknown Property"),
+        deal_summary_paragraph=result.get("deal_summary_paragraph", ""),
         deal_summary=result.get("deal_summary", []),
         high_issues=high,
         medium_issues=medium,
@@ -415,6 +417,7 @@ def results(job_id):
         fails=fails,
         passes=passes,
         total=total,
+        additional_issues=result.get("additional_issues", []),
         redline_summary=result.get("redline_summary", {}),
         original_filename=job["original_filename"],
     )
