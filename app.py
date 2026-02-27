@@ -304,14 +304,23 @@ def _run_analysis(job_id, input_path, original_filename, loi_path=None):
         section_positions  = redline_summary.get("section_positions", {})
         import sys as _sys
         _sys.stderr.write(f"[positions] {sorted(section_positions.items(), key=lambda x:x[1])[:12]}\n")
-        NOT_PRESENT = {"not addressed", "not specified", "not addressed.", "not specified.",
-                       "not found", "silent", "not mentioned", "not discussed"}
+        # Exact "not addressed / not specified" phrases — always sort to bottom
+        # regardless of whether a comment was inserted (comment could be a keyword
+        # false-match anywhere in the doc, not a reliable position signal).
+        EXACT_NOT_PRESENT = {
+            "not addressed", "not specified", "not addressed.", "not specified.",
+            "not found", "not mentioned", "not discussed", "silent",
+        }
 
-        def _is_not_present(lease_says_str: str) -> bool:
-            s = lease_says_str.strip().lower()
-            return (s in NOT_PRESENT
-                    or s.startswith("not addressed")
-                    or s.startswith("not specified"))
+        def _is_exactly_absent(s: str) -> bool:
+            """True when the AI said the clause is simply missing — no lease text quoted."""
+            return s.strip().lower() in EXACT_NOT_PRESENT
+
+        def _is_vaguely_absent(s: str) -> bool:
+            """True when absent but with some extra context (e.g. 'Not addressed – no deadline')."""
+            sl = s.strip().lower()
+            return (sl.startswith("not addressed") or sl.startswith("not specified")) \
+                   and sl not in EXACT_NOT_PRESENT
 
         for idx, item in enumerate(result.get("review", [])):
             sec         = item.get("section")
@@ -319,9 +328,11 @@ def _run_analysis(job_id, input_path, original_filename, loi_path=None):
             action      = section_actions.get(sec)
             pos         = section_positions.get(sec, 999999)
 
-            # Only force 999999 when the clause is truly absent AND no redline/comment was applied.
-            # If an action was taken, the section exists in the document — trust the scanned position.
-            if _is_not_present(lease_says) and not action:
+            if _is_exactly_absent(lease_says):
+                # Clause is simply missing — keyword comment positions are unreliable
+                pos = 999999
+            elif _is_vaguely_absent(lease_says) and not action:
+                # Absent with context but no action taken — still unreliable
                 pos = 999999
 
             item["action_taken"]    = action
@@ -407,24 +418,32 @@ def results(job_id):
     review = result.get("review", [])
 
     # Ensure lease_position exists on every item (older persisted jobs may lack it)
-    _NOT_PRESENT = {"not addressed", "not specified", "not addressed.", "not specified.",
-                    "not found", "silent", "not mentioned", "not discussed"}
+    _EXACT_NOT_PRESENT = {
+        "not addressed", "not specified", "not addressed.", "not specified.",
+        "not found", "not mentioned", "not discussed", "silent",
+    }
 
-    def _is_absent(s):
-        s = (s or "").strip().lower()
-        return s in _NOT_PRESENT or s.startswith("not addressed") or s.startswith("not specified")
+    def _disk_is_exactly_absent(s):
+        return (s or "").strip().lower() in _EXACT_NOT_PRESENT
+
+    def _disk_is_vaguely_absent(s):
+        sl = (s or "").strip().lower()
+        return (sl.startswith("not addressed") or sl.startswith("not specified")) \
+               and sl not in _EXACT_NOT_PRESENT
 
     for idx, r in enumerate(review):
         lease_says  = r.get("lease_says") or ""
-        action_done = r.get("action_taken")  # "redline", "comment", "both", or None
-        if _is_absent(lease_says) and not action_done:
-            # Truly absent + no action taken → sort to bottom
+        action_done = r.get("action_taken")
+        if _disk_is_exactly_absent(lease_says):
+            r["lease_position"] = 999999
+            r["lease_sort_key"] = 999999 * 10000 + idx
+        elif _disk_is_vaguely_absent(lease_says) and not action_done:
             r["lease_position"] = 999999
             r["lease_sort_key"] = 999999 * 10000 + idx
         else:
             if "lease_position" not in r:
                 r["lease_position"] = idx * 100
-            r["lease_sort_key"] = r.get("lease_position", idx * 100) * 10000 + idx  # always recompute
+            r["lease_sort_key"] = r.get("lease_position", idx * 100) * 10000 + idx
 
     high   = [r for r in review if r.get("priority") == "High"   and r.get("status") != "pass"]
     medium = [r for r in review if r.get("priority") == "Medium" and r.get("status") != "pass"]
