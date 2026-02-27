@@ -307,20 +307,26 @@ def _run_analysis(job_id, input_path, original_filename, loi_path=None):
         NOT_PRESENT = {"not addressed", "not specified", "not addressed.", "not specified.",
                        "not found", "silent", "not mentioned", "not discussed"}
 
+        def _is_not_present(lease_says_str: str) -> bool:
+            s = lease_says_str.strip().lower()
+            return (s in NOT_PRESENT
+                    or s.startswith("not addressed")
+                    or s.startswith("not specified"))
+
         for idx, item in enumerate(result.get("review", [])):
             sec        = item.get("section")
-            lease_says = (item.get("lease_says") or "").strip().lower()
+            lease_says = (item.get("lease_says") or "")
             pos        = section_positions.get(sec, 999999)
 
             # If the AI said this clause is absent, don't trust keyword-match positions —
             # force to end so "not addressed" items always sort below found items.
-            if lease_says in NOT_PRESENT or lease_says.startswith("not addressed") or lease_says.startswith("not specified"):
+            if _is_not_present(lease_says):
                 pos = 999999
 
             item["action_taken"]    = section_actions.get(sec)
             item["lease_position"]  = pos
             item["checklist_index"] = idx
-            item["lease_sort_key"]  = pos * 10000 + idx   # stable tiebreaker
+            item["lease_sort_key"]  = pos * 10000 + idx   # stable tiebreaker — always recomputed
             if pos < 50:
                 _sys.stderr.write(f"[pos-early] sec={sec!r} pos={pos}\n")
 
@@ -402,14 +408,20 @@ def results(job_id):
     # Ensure lease_position exists on every item (older persisted jobs may lack it)
     _NOT_PRESENT = {"not addressed", "not specified", "not addressed.", "not specified.",
                     "not found", "silent", "not mentioned", "not discussed"}
+
+    def _is_absent(s):
+        s = (s or "").strip().lower()
+        return s in _NOT_PRESENT or s.startswith("not addressed") or s.startswith("not specified")
+
     for idx, r in enumerate(review):
-        lease_says = (r.get("lease_says") or "").strip().lower()
-        if lease_says in _NOT_PRESENT or lease_says.startswith("not addressed") or lease_says.startswith("not specified"):
+        lease_says = r.get("lease_says") or ""
+        if _is_absent(lease_says):
             r["lease_position"] = 999999
-        elif "lease_position" not in r:
-            r["lease_position"] = idx * 100
-        if "lease_sort_key" not in r:
-            r["lease_sort_key"] = r.get("lease_position", idx * 100) * 10000 + idx
+            r["lease_sort_key"] = 999999 * 10000 + idx   # always override — don't use stale stored value
+        else:
+            if "lease_position" not in r:
+                r["lease_position"] = idx * 100
+            r["lease_sort_key"] = r.get("lease_position", idx * 100) * 10000 + idx  # always recompute
 
     high   = [r for r in review if r.get("priority") == "High"   and r.get("status") != "pass"]
     medium = [r for r in review if r.get("priority") == "Medium" and r.get("status") != "pass"]
